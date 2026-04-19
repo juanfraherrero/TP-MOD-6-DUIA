@@ -5,8 +5,20 @@ services:
       - "3000:3000"
     environment:
       - DATABASE_URL=postgres://duia:duia@db:5432/duia
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+      # Ollama — cuando se corre con `--profile ollama`, el service `ollama`
+      # está disponible en la red de compose y la URL es http://ollama:11434.
+      # Si `LLM_PROVIDER=ollama` pero corrés sin el profile, tenés que apuntar
+      # a un Ollama local del host (ej: http://host.docker.internal:11434).
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b-instruct}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
       - AUTH_SECRET=${AUTH_SECRET}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     depends_on:
       db:
         condition: service_healthy
@@ -32,3 +44,4 @@ services:
 
 volumes:
   db_data:
+  ollama_data:

@@ -10,23 +10,29 @@
     "typeorm": "typeorm-ts-node-commonjs -d src/db/data-source.ts",
     "migration:generate": "npm run typeorm -- migration:generate",
     "migration:run": "npm run typeorm -- migration:run",
-    "migration:revert": "npm run typeorm -- migration:revert"
+    "migration:revert": "npm run typeorm -- migration:revert",
+    "seed": "TS_NODE_PROJECT=tsconfig.scripts.json ts-node -r tsconfig-paths/register --transpile-only scripts/seed.ts"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^1.0.0",
+    "@ai-sdk/groq": "^1.0.0",
     "@ai-sdk/react": "^1.0.0",
-    "@langchain/anthropic": "^0.3.0",
+    "@huggingface/transformers": "^3.0.0",
     "@langchain/core": "^0.3.0",
+    "@langchain/google-genai": "^0.1.0",
+    "@langchain/groq": "^0.1.2",
     "@langchain/langgraph": "^0.2.0",
+    "@langchain/ollama": "0.1.6",
     "ai": "^4.0.0",
     "next": "^15.1.0",
+    "node-sql-parser": "^5.3.0",
     "pg": "^8.13.0",
     "pgvector": "^0.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "reflect-metadata": "^0.2.2",
     "typeorm": "^0.3.20",
-    "zod": "^3.23.0"
+    "zod": "^3.23.0",
+    "zod-to-json-schema": "^3.23.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -37,6 +43,7 @@
     "postcss": "^8.4.0",
     "tailwindcss": "^3.4.0",
     "ts-node": "^10.9.0",
+    "tsconfig-paths": "4.2.0",
     "typescript": "^5.6.0"
   }
 }
