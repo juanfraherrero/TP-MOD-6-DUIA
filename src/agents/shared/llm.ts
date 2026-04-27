@@ -60,6 +60,25 @@ if (!globalForLLM.__llmLogged) {
   globalForLLM.__llmLogged = true;
 }
 
+// Patrones de error que indican "el modelo respondió, pero no emitió un tool
+// call parseable" — son recuperables mediante retry o vía el fallback JSON.
+// Distinto de errores de la API (4xx/5xx/timeout) que se manejan en el wrapper.
+// Cada provider/parser tira su propio mensaje; la lista cubre los observados:
+//  - LangChain Ollama / Groq genéricos: "No tool calls found"
+//  - Mensajes con substring "tool_call" / "Failed to parse"
+//  - Gemini parser: "No parseable tool calls provided to GoogleGenerativeAIToolsOutputParser"
+//  - Cualquier OutputParser de LangChain que diga "could not parse"
+function isToolCallParseFailure(msg: string): boolean {
+  return (
+    msg.includes("No tool calls found") ||
+    msg.includes("No parseable tool calls") ||
+    msg.includes("tool_call") ||
+    msg.includes("Failed to parse") ||
+    msg.includes("could not parse") ||
+    msg.includes("OutputParserException")
+  );
+}
+
 /**
  * Invoca el LLM pidiendo structured output, con fallback automático a JSON
  * parsing manual cuando el modelo (típicamente coder models locales como
@@ -106,11 +125,7 @@ export async function invokeStructured<T extends z.ZodTypeAny>(
     return schema.parse(raw);
   } catch (err) {
     const msg = String(err);
-    const isToolCallFailure =
-      msg.includes("No tool calls found") ||
-      msg.includes("tool_call") ||
-      msg.includes("Failed to parse");
-    if (!isToolCallFailure) throw err;
+    if (!isToolCallParseFailure(msg)) throw err;
     log.warn("invokeStructured: fallback a JSON manual", {
       name: options.name,
       error: msg.slice(0, 120),
@@ -184,11 +199,7 @@ export async function invokeWithRetry<TInput, TOutput>(
     } catch (err) {
       lastError = err;
       const msg = String(err);
-      const isRetryable =
-        msg.includes("No tool calls found") ||
-        msg.includes("tool_call") ||
-        msg.includes("Failed to parse");
-      if (!isRetryable) throw err;
+      if (!isToolCallParseFailure(msg)) throw err;
       log.warn(`invokeWithRetry: retry ${i + 1}/${maxRetries}`, {
         error: msg.slice(0, 120),
       });
@@ -219,46 +230,257 @@ export async function invokeWithRetry<TInput, TOutput>(
   throw lastError;
 }
 
-export function createLLM(options: LLMOptions = {}): BaseChatModel {
-  const provider = getProvider();
+// ───────── observability wrapper para providers cloud ─────────────────────
+// Envoltorio Proxy aplicado a Gemini y Groq (no a Ollama). Hace 2 cosas:
+//   1) Timeout explícito sobre cada `invoke()` — sin esto, un cuelgue del
+//      provider (ej: Gemini con quota agotada que retiene la conexión)
+//      bloquea el grafo entero sin error visible.
+//   2) Captura de errores de la API y log estructurado con status HTTP,
+//      retryDelay y quotaId si los hay (Gemini exporta esto en el body).
+// El error se re-lanza tal cual; la lógica upstream (invokeWithRetry,
+// route handler) sigue manejándolo igual que antes.
+
+const LLM_TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS ?? 60_000);
+
+type ParsedProviderError = {
+  status?: number;
+  retryDelaySec?: number;
+  quotaId?: string;
+  reason: string;
+};
+
+function parseProviderError(
+  provider: Provider,
+  err: unknown,
+): ParsedProviderError {
+  const raw = err instanceof Error ? err.message : String(err);
 
   if (provider === "gemini") {
-    const apiKey = process.env.GOOGLE_API_KEY;
-    if (!apiKey) {
-      throw new Error(
-        "GOOGLE_API_KEY no está definido. Sacá una key gratis en https://aistudio.google.com y ponela en .env.",
-      );
+    // Formato típico del SDK de Google:
+    // "[GoogleGenerativeAI Error]: Error fetching from <url>: [400 Bad Request] <reason>"
+    // Con body JSON anexo cuando es 429: contiene retryDelay y quotaId.
+    const statusMatch = raw.match(/\[(\d{3})\s/);
+    const status = statusMatch ? Number(statusMatch[1]) : undefined;
+    const retryMatch = raw.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/);
+    const retryDelaySec = retryMatch ? Number(retryMatch[1]) : undefined;
+    const quotaMatch = raw.match(/"quotaId"\s*:\s*"([^"]+)"/);
+    const quotaId = quotaMatch ? quotaMatch[1] : undefined;
+    return { status, retryDelaySec, quotaId, reason: raw };
+  }
+
+  if (provider === "groq") {
+    const statusMatch =
+      raw.match(/status[\s:=]+(\d{3})/i) || raw.match(/\[(\d{3})/);
+    return {
+      status: statusMatch ? Number(statusMatch[1]) : undefined,
+      reason: raw,
+    };
+  }
+
+  return { reason: raw };
+}
+
+type AnyInvokable = { invoke: (...args: unknown[]) => Promise<unknown> };
+
+function wrapInvoke(provider: Provider, target: AnyInvokable, args: unknown[]) {
+  const start = performance.now();
+  return Promise.race([
+    target.invoke(...args),
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              `LLM_TIMEOUT: ${LLM_TIMEOUT_MS}ms sin respuesta del provider ${provider}`,
+            ),
+          ),
+        LLM_TIMEOUT_MS,
+      ),
+    ),
+  ]).catch((err: unknown) => {
+    const ms = Math.round(performance.now() - start);
+    const isTimeout =
+      err instanceof Error && err.message.startsWith("LLM_TIMEOUT");
+    const parsed = parseProviderError(provider, err);
+
+    // Solo logueamos errores que parecen reales de la API (status detectado
+    // o timeout). Errores de parsing de tool calling vienen sin status y se
+    // manejan en invokeWithRetry/invokeStructured con su propio log.
+    if (parsed.status !== undefined || isTimeout) {
+      log.error(`API error (${provider})`, {
+        ms,
+        status: parsed.status,
+        timeout: isTimeout,
+        retryDelaySec: parsed.retryDelaySec,
+        quotaId: parsed.quotaId,
+        reason: parsed.reason.slice(0, 400),
+      });
     }
-    return new ChatGoogleGenerativeAI({
-      apiKey,
-      model: options.model ?? process.env.GEMINI_MODEL ?? "gemini-2.0-flash",
-      temperature: options.temperature ?? 0.2,
-      maxOutputTokens: options.maxTokens,
-    });
-  }
+    throw err;
+  });
+}
 
-  if (provider === "ollama") {
-    const baseUrl = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
-    return new ChatOllama({
-      baseUrl,
-      model: options.model ?? process.env.OLLAMA_MODEL ?? "qwen2.5:7b-instruct",
-      temperature: options.temperature ?? 0.2,
-      numPredict: options.maxTokens,
-    });
-  }
+// Sanitiza JSON Schema para Gemini, que NO acepta el dialecto JSON Schema
+// estándar — usa OpenAPI 3.0 Proto (subset). Diferencias clave:
+//   - JSON Schema usa  {"type": ["string", "null"]}  para campos nullable.
+//   - OpenAPI 3.0 usa  {"type": "string", "nullable": true}.
+// Aplica recursivo, in-place sobre objects/arrays. Solo lo usa el wrapper
+// de Gemini — el output se pasa directo a withStructuredOutput como JSON
+// Schema crudo, evitando que LangChain re-traduzca el Zod.
+function sanitizeSchemaForGemini(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(sanitizeSchemaForGemini);
+  if (node === null || typeof node !== "object") return node;
 
-  // groq
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+    // Strip de keys que Gemini rechaza explícitamente (no son parte de su
+    // subset OpenAPI 3.0 Proto). additionalProperties es la trampa más común
+    // — zodToJsonSchema la pone en true/false en cualquier z.object().
+    if (
+      k === "$schema" ||
+      k === "$ref" ||
+      k === "$id" ||
+      k === "definitions" ||
+      k === "additionalProperties" ||
+      k === "patternProperties" ||
+      k === "unevaluatedProperties" ||
+      k === "dependencies" ||
+      k === "propertyNames" ||
+      k === "contains" ||
+      k === "not" ||
+      k === "if" ||
+      k === "then" ||
+      k === "else"
+    ) {
+      continue;
+    }
+
+    if (k === "type" && Array.isArray(v)) {
+      const types = (v as string[]).filter((t) => t !== "null");
+      const hasNull = (v as string[]).includes("null");
+      // Gemini espera type: scalar. Colapsamos al primer no-null y movemos
+      // el null a `nullable: true`.
+      out.type = types[0] ?? "string";
+      if (hasNull) out.nullable = true;
+      continue;
+    }
+    out[k] = sanitizeSchemaForGemini(v);
+  }
+  return out;
+}
+
+function isZodSchema(x: unknown): x is z.ZodTypeAny {
+  return Boolean(
+    x && typeof x === "object" && "_def" in (x as Record<string, unknown>),
+  );
+}
+
+function wrapWithObservability(
+  model: BaseChatModel,
+  provider: Provider,
+): BaseChatModel {
+  return new Proxy(model, {
+    get(target, prop, receiver) {
+      const original = Reflect.get(target, prop, receiver);
+      if (typeof original !== "function") return original;
+
+      // Caso 1: invoke directo del modelo.
+      if (prop === "invoke") {
+        return (...args: unknown[]) =>
+          wrapInvoke(provider, target as unknown as AnyInvokable, args);
+      }
+
+      // Caso 2: withStructuredOutput devuelve un nuevo Runnable. Necesitamos
+      // envolverlo también para interceptar SU `invoke()` — la llamada a la
+      // API ocurre cuando ese runnable se ejecuta, no cuando se construye.
+      // Para Gemini además convertimos el Zod a JSON Schema sanitizado ANTES
+      // de pasárselo al SDK, para esquivar el error 400 "Proto field is not
+      // repeating, cannot start list" en campos `.nullish()`/`.nullable()`.
+      if (prop === "withStructuredOutput") {
+        return (...args: unknown[]) => {
+          const callArgs =
+            provider === "gemini" && isZodSchema(args[0])
+              ? [
+                  sanitizeSchemaForGemini(
+                    zodToJsonSchema(args[0] as z.ZodTypeAny),
+                  ),
+                  ...args.slice(1),
+                ]
+              : args;
+
+          const runnable = (
+            original as (...a: unknown[]) => unknown
+          ).apply(target, callArgs) as object;
+
+          return new Proxy(runnable, {
+            get(rt, rp, rr) {
+              const ro = Reflect.get(rt, rp, rr);
+              if (rp === "invoke" && typeof ro === "function") {
+                return (...a: unknown[]) =>
+                  wrapInvoke(provider, rt as unknown as AnyInvokable, a);
+              }
+              if (typeof ro === "function") return ro.bind(rt);
+              return ro;
+            },
+          });
+        };
+      }
+
+      return original.bind(target);
+    },
+  }) as BaseChatModel;
+}
+
+// ───────── factories por provider ───────────────────────────────────────────
+// Gemini y Groq atraviesan wrapWithObservability. Ollama queda en el path
+// directo: corre local, los errores son de red/modelo y los maneja el cliente.
+
+function createGeminiLLM(options: LLMOptions): BaseChatModel {
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "GOOGLE_API_KEY no está definido. Sacá una key gratis en https://aistudio.google.com y ponela en .env.",
+    );
+  }
+  const base = new ChatGoogleGenerativeAI({
+    apiKey,
+    model: options.model ?? process.env.GEMINI_MODEL ?? "gemini-2.0-flash",
+    temperature: options.temperature ?? 0.2,
+    maxOutputTokens: options.maxTokens,
+  });
+  return wrapWithObservability(base, "gemini");
+}
+
+function createGroqLLM(options: LLMOptions): BaseChatModel {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     throw new Error(
       "GROQ_API_KEY no está definido. Copiá .env.example a .env y completalo.",
     );
   }
-  return new ChatGroq({
+  const base = new ChatGroq({
     apiKey,
     model:
       options.model ?? process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile",
     temperature: options.temperature ?? 0.2,
     maxTokens: options.maxTokens,
   });
+  return wrapWithObservability(base, "groq");
+}
+
+function createOllamaLLM(options: LLMOptions): BaseChatModel {
+  const baseUrl = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
+  return new ChatOllama({
+    baseUrl,
+    model: options.model ?? process.env.OLLAMA_MODEL ?? "qwen2.5:7b-instruct",
+    temperature: options.temperature ?? 0.2,
+    numPredict: options.maxTokens,
+  });
+}
+
+export function createLLM(options: LLMOptions = {}): BaseChatModel {
+  const provider = getProvider();
+  if (provider === "gemini") return createGeminiLLM(options);
+  if (provider === "groq") return createGroqLLM(options);
+  return createOllamaLLM(options);
 }

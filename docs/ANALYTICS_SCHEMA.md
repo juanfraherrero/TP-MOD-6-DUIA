@@ -186,6 +186,7 @@ activities (
   is_active boolean,
   recurrence jsonb,             -- null = one-time | {kind:"weekly",days,startTime,endTime} | {kind:"dates",dates,startTime,endTime}
   available_dates date[],       -- fechas materializadas (GIN). Ver Informe §4.13.
+  audience_tags text[],         -- LLM-generated en la ingesta: público ideal (GIN). Ej: ["familias con niños", "principiantes", "no recomendado para problemas cardíacos"]. Embebidas también en los chunks RAG.
   ...
 )
 ```
@@ -219,6 +220,21 @@ SELECT id, title, recurrence->'days' AS days
 FROM activities
 WHERE recurrence->>'kind' = 'weekly'
   AND (recurrence->'days' ? 'sat' OR recurrence->'days' ? 'sun')
+LIMIT 50;
+
+-- Actividades aptas para algún público específico (audience_tags es text[]).
+-- Operador @> = "contiene todos los elementos de", && = "tiene overlap con".
+SELECT id, title, audience_tags
+FROM activities
+WHERE audience_tags && ARRAY['familias con niños', 'adultos mayores']
+LIMIT 50;
+
+-- Actividades NO recomendadas para problemas cardíacos (any-match en text[]).
+SELECT id, title FROM activities
+WHERE EXISTS (
+  SELECT 1 FROM unnest(audience_tags) tag
+  WHERE tag ILIKE '%problemas cardíacos%' OR tag ILIKE '%no recomendado%'
+)
 LIMIT 50;
 
 -- Actividades one-time que duren más de 3 días (ej: treks largos).

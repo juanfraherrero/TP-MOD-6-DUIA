@@ -8,6 +8,7 @@ import {
   extractIntentSystem,
   GUARDRAIL_CHECK_SYSTEM,
   INPUT_GUARD_SYSTEM,
+  QUERY_REWRITE_SYSTEM,
   RANK_AND_EXPLAIN_SYSTEM,
   TONE_INSTRUCTION,
   fallbackNoMatchPrompt,
@@ -254,6 +255,85 @@ export async function webEnrich(
 }
 
 // ---------------------------------------------------------------------------
+// 2.5. query_rewrite — traduce intent a vocabulario técnico del catálogo
+// ---------------------------------------------------------------------------
+// Camino A de data augmentation (ver docs/INFORME_TP.md): el catálogo se
+// enriqueció en la ingesta con audience_tags + descripción técnica. Acá hacemos
+// el lado simétrico: reescribimos el query del usuario al mismo vocabulario
+// para que el embedding del query y los embeddings de los chunks vivan cerca
+// en el espacio vectorial.
+
+const queryRewriteSchema = z.object({
+  enrichedQuery: z
+    .string()
+    .min(5)
+    .describe(
+      "Reescritura técnica del semanticQuery — frase natural en español, no JSON.",
+    ),
+  rewriteApplied: z
+    .boolean()
+    .default(true)
+    .describe(
+      "false si el query original ya era técnico y no se le agregó nada útil.",
+    ),
+  reasoning: z
+    .string()
+    .default("")
+    .describe("1-2 líneas explicando qué dimensiones se tradujeron."),
+});
+
+export async function queryRewrite(
+  state: CustomerState,
+): Promise<Partial<CustomerState>> {
+  const intent = requireIntent(state);
+  const end = log.time("query_rewrite");
+
+  try {
+    const result = await invokeStructured(
+      queryRewriteSchema,
+      [
+        ["system", QUERY_REWRITE_SYSTEM],
+        [
+          "user",
+          `semanticQuery a reescribir: "${intent.semanticQuery}"
+${state.webContext ? `\nContexto web previo (resumen): ${state.webContext.slice(0, 400)}` : ""}
+
+Devolvé enrichedQuery, rewriteApplied y reasoning.`,
+        ],
+      ],
+      { name: "query_rewrite", temperature: 0.2 },
+    );
+    end();
+    log.info("query reescrito", {
+      original: intent.semanticQuery.slice(0, 80),
+      enriched: result.enrichedQuery.slice(0, 120),
+      rewriteApplied: result.rewriteApplied,
+    });
+    return {
+      enrichedQuery: result.enrichedQuery,
+      pendingEvents: [
+        {
+          eventType: "query_rewritten",
+          payload: {
+            original: intent.semanticQuery,
+            enriched: result.enrichedQuery,
+            applied: result.rewriteApplied,
+          },
+        },
+      ],
+    };
+  } catch (err) {
+    end();
+    // Fallback: si el LLM falla, seguimos con el semanticQuery original.
+    // No bloquear el flujo por un error en un paso de optimización.
+    log.warn("query_rewrite falló — sigo con semanticQuery original", {
+      error: String(err).slice(0, 200),
+    });
+    return { enrichedQuery: undefined };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 3. rag_retrieve — usa el módulo RAG existente
 // ---------------------------------------------------------------------------
 
@@ -268,7 +348,17 @@ export async function ragRetrieve(
     dateRangeEnd: intent.filters.dateRangeEnd ?? undefined,
   };
 
-  const candidates = await retrieveActivities(intent.semanticQuery, 8, filters);
+  // Concatenamos el query original con el reescrito (si existe). Belt &
+  // suspenders: el embedding contiene tanto el lenguaje natural del usuario
+  // como la traducción técnica, maximizando el recall.
+  const queryForRetrieval = state.enrichedQuery
+    ? `${intent.semanticQuery}\n${state.enrichedQuery}`
+    : intent.semanticQuery;
+
+  // Top-K=6 (antes 8): el LLM evaluator trabaja mejor con menos candidatos
+  // y reduce el peso del prompt en evaluate_match → mejor estabilidad de
+  // tool calling en Gemini Flash con prompts cargados.
+  const candidates = await retrieveActivities(queryForRetrieval, 6, filters);
   return { candidates };
 }
 
@@ -300,13 +390,16 @@ export async function evaluateMatch(
   const end = log.time("evaluate_match");
 
   const intent = requireIntent(state);
+  // Prompt minimalista para evaluate_match: solo title + descripción corta +
+  // precio. Removidos `bestChunk` (era substring de description) y
+  // `distance` (ruido para el LLM, ya implícito en el orden de los hits).
+  // Bajamos el slice de description 280 → 180 chars.
   const candidatesText = state.candidates
     .map(
       (c) =>
         `[${c.id}] ${c.title}
-  Desc: ${c.description.slice(0, 280)}
-  Chunk relevante: ${c.bestChunk.slice(0, 200)}
-  Precio: $${c.priceArs} ARS | Distancia vectorial: ${c.distance.toFixed(3)}`,
+  ${c.description.slice(0, 180)}
+  Precio: $${c.priceArs} ARS`,
     )
     .join("\n\n");
 
@@ -322,9 +415,7 @@ Para cada candidato devolvé relevance 0..1:
 - 0.0-0.3: no matchea la intención.
 - 0.4-0.6: tiene algo de relación pero no es lo que pidió.
 - 0.7-0.9: match fuerte.
-- 0.9-1.0: match casi perfecto.
-
-Considerá que la distancia vectorial es solo una señal; usá TU criterio sobre si la actividad realmente da lo que el usuario pidió.`;
+- 0.9-1.0: match casi perfecto.`;
 
   const result = await invokeStructured(
     evaluationSchema,
@@ -489,9 +580,35 @@ export async function rankAndExplain(
     };
   }
 
-  const selected = selectedIds
+  let selected = selectedIds
     .map((id) => state.candidates.find((c) => c.id === id))
     .filter((c): c is NonNullable<typeof c> => Boolean(c));
+
+  // Recovery A: el evaluator (evaluate_match) puede devolver IDs hallucinados
+  // (UUIDs truncados o inventados) que no matchean ningún candidate. Si
+  // quedamos sin selected pero teníamos selectedIds, recuperamos tomando los
+  // top candidates en el ORDEN del evaluation (mejor score primero).
+  // Sin esto, el LLM rank_and_explain recibe un prompt vacío y la UI rompe.
+  if (selected.length === 0 && selectedIds.length > 0) {
+    log.warn("evaluate_match devolvió IDs no encontrados — recuperando top candidates", {
+      selectedIds,
+      candidateIds: state.candidates.map((c) => c.id),
+    });
+    const topByScore = [...evals]
+      .sort((a, b) => b.relevance - a.relevance)
+      .slice(0, selectedIds.length);
+    selected = topByScore
+      .map((e) => state.candidates.find((c) => c.id === e.id))
+      .filter((c): c is NonNullable<typeof c> => Boolean(c));
+    // Última red: si NI los IDs del evaluation matchean (todos hallucinados),
+    // tomamos los primeros candidates por orden de retrieval.
+    if (selected.length === 0) {
+      selected = state.candidates.slice(0, selectedIds.length);
+      log.warn("evaluation entera no matchea candidates — usando top retrieval", {
+        count: selected.length,
+      });
+    }
+  }
 
   const intent = requireIntent(state);
   const candidatesList = selected

@@ -5,6 +5,7 @@ import {
 	inputGuard,
 	extractIntent,
 	webEnrich,
+	queryRewrite,
 	ragRetrieve,
 	evaluateMatch,
 	webEnrichRetry,
@@ -24,6 +25,7 @@ function build() {
 		.addNode("input_guard", inputGuard)
 		.addNode("extract_intent", extractIntent)
 		.addNode("web_enrich", webEnrich)
+		.addNode("query_rewrite", queryRewrite)
 		.addNode("rag_retrieve", ragRetrieve)
 		.addNode("evaluate_match", evaluateMatch)
 		.addNode("web_enrich_retry", webEnrichRetry)
@@ -36,16 +38,23 @@ function build() {
 			emit_response: "emit_response",
 		})
 		.addConditionalEdges("extract_intent", routeEnrichment, {
+			// isOnlyPlace=true → web_enrich antes de query_rewrite (el rewrite
+			// va a usar el contexto de Tavily). Caso normal → directo a
+			// query_rewrite. query_rewrite traduce el semanticQuery a
+			// vocabulario técnico alineado con audience_tags + descripciones.
 			web_enrich: "web_enrich",
-			rag_retrieve: "rag_retrieve",
+			rag_retrieve: "query_rewrite",
 		})
-		.addEdge("web_enrich", "rag_retrieve")
+		.addEdge("web_enrich", "query_rewrite")
+		.addEdge("query_rewrite", "rag_retrieve")
 		.addEdge("rag_retrieve", "evaluate_match")
 		.addConditionalEdges("evaluate_match", routeEvaluation, {
 			web_enrich_retry: "web_enrich_retry",
 			rank_and_explain: "rank_and_explain",
 		})
-		.addEdge("web_enrich_retry", "rag_retrieve")
+		// El loop de retry vuelve por query_rewrite: el rewrite se beneficia
+		// del contexto extra que dejó web_enrich_retry.
+		.addEdge("web_enrich_retry", "query_rewrite")
 		.addEdge("rank_and_explain", "guardrail_check")
 		.addEdge("guardrail_check", "emit_response")
 		.addEdge("emit_response", END);

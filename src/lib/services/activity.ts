@@ -4,8 +4,24 @@ import { createLogger } from "@/lib/logger";
 import { ingestActivity } from "@/rag";
 import type { ActivityInput } from "@/lib/validation/activity";
 import { expandAvailableDates } from "@/lib/recurrence/expand";
+import { generateAudienceTags } from "./audience-tags";
 
 const log = createLogger("svc:activity");
+
+// Heurística: ¿hace falta re-generar audience_tags? Solo cuando cambian los
+// campos de texto que definen la naturaleza de la actividad. Si solo se cambia
+// precio o fecha, conservamos los tags existentes para evitar un LLM call
+// innecesario y mantener consistencia.
+function textFieldsChanged(prev: Activity, next: ActivityInput): boolean {
+  return (
+    prev.title !== next.title ||
+    prev.description !== next.description ||
+    prev.requirements !== next.requirements ||
+    prev.physicalPrep !== next.physicalPrep ||
+    prev.altitudeM !== (next.altitudeM ?? null) ||
+    prev.elevationGainM !== (next.elevationGainM ?? null)
+  );
+}
 
 // Repository lookup uses the entity NAME string ("Activity") instead of the
 // class ref to avoid "No metadata for Activity" errors in Next dev mode:
@@ -16,7 +32,7 @@ const log = createLogger("svc:activity");
 // literal del @Entity("activities") — inmune a minificación.
 const ENTITY = "activities";
 
-function normalize(input: ActivityInput) {
+function normalize(input: ActivityInput, audienceTags: string[]) {
   const recurrence = input.recurrence ?? null;
   // Materializamos availability al escribir. Las queries del retrieve luego
   // son O(log n) con GIN — el agente no necesita entender el patrón.
@@ -39,6 +55,7 @@ function normalize(input: ActivityInput) {
     isActive: input.isActive,
     recurrence,
     availableDates,
+    audienceTags,
   };
 }
 
@@ -58,10 +75,14 @@ export async function createActivity(input: ActivityInput): Promise<Activity> {
   log.info("crear", { title: input.title });
   const ds = await getDataSource();
   const repo = ds.getRepository<Activity>(ENTITY);
-  const data = normalize(input);
+
+  const audienceTags = input.audienceTags ?? (await generateAudienceTags(input));
+
+  const data = normalize(input, audienceTags);
   log.info("availability expandida", {
     kind: data.recurrence?.kind ?? "once",
     dates: data.availableDates.length,
+    audienceTags: data.audienceTags.length,
   });
   const entity = repo.create(data);
   const saved = await repo.save(entity);
@@ -82,11 +103,27 @@ export async function updateActivity(
     log.warn("no encontrada", { id });
     return null;
   }
-  const data = normalize(input);
+
+  // Política de tags: 1) si vienen explícitos en input, se respetan;
+  // 2) si NO vienen y los campos de texto cambiaron, regeneramos;
+  // 3) si NO vienen y nada de texto cambió, conservamos los existentes.
+  let audienceTags: string[];
+  if (input.audienceTags !== undefined) {
+    audienceTags = input.audienceTags;
+    log.info("tags overrideados manualmente", { id, count: audienceTags.length });
+  } else if (textFieldsChanged(existing, input)) {
+    audienceTags = await generateAudienceTags(input);
+  } else {
+    audienceTags = existing.audienceTags;
+    log.debug("tags conservados (nada de texto cambió)", { id });
+  }
+
+  const data = normalize(input, audienceTags);
   log.info("availability expandida", {
     id,
     kind: data.recurrence?.kind ?? "once",
     dates: data.availableDates.length,
+    audienceTags: data.audienceTags.length,
   });
   await repo.update(id, data);
   const updated = await repo.findOneOrFail({ where: { id } });
