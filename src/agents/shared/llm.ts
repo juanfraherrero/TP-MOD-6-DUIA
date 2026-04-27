@@ -60,6 +60,25 @@ if (!globalForLLM.__llmLogged) {
   globalForLLM.__llmLogged = true;
 }
 
+// Patrones de error que indican "el modelo respondió, pero no emitió un tool
+// call parseable" — son recuperables mediante retry o vía el fallback JSON.
+// Distinto de errores de la API (4xx/5xx/timeout) que se manejan en el wrapper.
+// Cada provider/parser tira su propio mensaje; la lista cubre los observados:
+//  - LangChain Ollama / Groq genéricos: "No tool calls found"
+//  - Mensajes con substring "tool_call" / "Failed to parse"
+//  - Gemini parser: "No parseable tool calls provided to GoogleGenerativeAIToolsOutputParser"
+//  - Cualquier OutputParser de LangChain que diga "could not parse"
+function isToolCallParseFailure(msg: string): boolean {
+  return (
+    msg.includes("No tool calls found") ||
+    msg.includes("No parseable tool calls") ||
+    msg.includes("tool_call") ||
+    msg.includes("Failed to parse") ||
+    msg.includes("could not parse") ||
+    msg.includes("OutputParserException")
+  );
+}
+
 /**
  * Invoca el LLM pidiendo structured output, con fallback automático a JSON
  * parsing manual cuando el modelo (típicamente coder models locales como
@@ -106,11 +125,7 @@ export async function invokeStructured<T extends z.ZodTypeAny>(
     return schema.parse(raw);
   } catch (err) {
     const msg = String(err);
-    const isToolCallFailure =
-      msg.includes("No tool calls found") ||
-      msg.includes("tool_call") ||
-      msg.includes("Failed to parse");
-    if (!isToolCallFailure) throw err;
+    if (!isToolCallParseFailure(msg)) throw err;
     log.warn("invokeStructured: fallback a JSON manual", {
       name: options.name,
       error: msg.slice(0, 120),
@@ -184,11 +199,7 @@ export async function invokeWithRetry<TInput, TOutput>(
     } catch (err) {
       lastError = err;
       const msg = String(err);
-      const isRetryable =
-        msg.includes("No tool calls found") ||
-        msg.includes("tool_call") ||
-        msg.includes("Failed to parse");
-      if (!isRetryable) throw err;
+      if (!isToolCallParseFailure(msg)) throw err;
       log.warn(`invokeWithRetry: retry ${i + 1}/${maxRetries}`, {
         error: msg.slice(0, 120),
       });

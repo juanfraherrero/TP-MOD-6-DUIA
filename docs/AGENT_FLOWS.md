@@ -14,8 +14,10 @@ durante la demo: GitHub renderiza Mermaid de forma nativa.
 
 ## 1. Customer Agent (`src/agents/customer/graph.ts`)
 
-Atiende al **cliente final** del chat público. Implementa CRAG: detecta cuándo
-el RAG local es insuficiente y enriquece con web search antes de re-rankear.
+Atiende al **cliente final** del chat público. Implementa CRAG (Corrective RAG):
+detecta cuándo el RAG local es insuficiente y enriquece con web search antes de
+re-rankear. Además aplica **query rewriting** para alinear el vocabulario del
+usuario con el catálogo enriquecido por audience tags (data augmentation).
 
 ```mermaid
 flowchart TD
@@ -24,15 +26,16 @@ flowchart TD
     input_guard -->|inScope=true| extract_intent[extract_intent<br/>🟦 extrae filtros<br/>+ resuelve fechas relativas]:::llm
 
     extract_intent -->|onlyPlace=true| web_enrich[web_enrich<br/>🟨 Tavily — qué hacer en X]:::tool
-    extract_intent -->|onlyPlace=false| rag_retrieve[rag_retrieve<br/>🟨 pgvector + filtros SQL]:::tool
+    extract_intent -->|onlyPlace=false| query_rewrite[query_rewrite<br/>🟦 traduce a vocabulario<br/>técnico del catálogo]:::llm
 
-    web_enrich --> rag_retrieve
+    web_enrich --> query_rewrite
+    query_rewrite --> rag_retrieve[rag_retrieve<br/>🟨 pgvector + filtros SQL]:::tool
     rag_retrieve --> evaluate_match[evaluate_match<br/>🟦 clasifica strong/partial/weak/none]:::llm
 
     evaluate_match -->|necesita más contexto<br/>y retries < 1| web_enrich_retry[web_enrich_retry<br/>🟨 Tavily — refina query]:::tool
     evaluate_match -->|hay match razonable<br/>o exhausted| rank_and_explain[rank_and_explain<br/>🟦 rankea + arma respuesta]:::llm
 
-    web_enrich_retry --> rag_retrieve
+    web_enrich_retry --> query_rewrite
     rank_and_explain --> guardrail_check[guardrail_check<br/>🟦 valida output]:::llm
     guardrail_check --> emit_response
     emit_response --> END([END]):::endpoint
@@ -50,12 +53,19 @@ flowchart TD
 | `input_guard` | LLM | Clasifica binario in-scope (turismo) / out-of-scope. Bloquea jailbreaks. |
 | `extract_intent` | LLM | Saca `place`, `maxPriceArs`, `targetDate`, `dateRange`, `onlyPlace`. Resuelve "próximo sábado", "mañana", etc. |
 | `web_enrich` | Tool (Tavily) | Si solo hay lugar (sin actividad), busca *qué hacer en X* y agrega keywords al query RAG. |
-| `rag_retrieve` | Tool (pgvector) | Búsqueda híbrida: filtros SQL (precio, `available_dates`) + ranking por embedding. |
+| `query_rewrite` | LLM | **Traduce el `semanticQuery` a vocabulario técnico del catálogo** — convierte "para mi mamá con asma" en "baja altitud, sin desnivel, dificultad baja, apta para problemas respiratorios". Maximiza el matching contra los `audience_tags` y descripciones embebidas. |
+| `rag_retrieve` | Tool (pgvector) | Búsqueda híbrida: filtros SQL (precio, `available_dates`) + ranking por embedding sobre el query enriquecido. |
 | `evaluate_match` | LLM | Clasifica cada hit como `strong`/`partial`/`weak`/`none`. Decide si reintentar. |
-| `web_enrich_retry` | Tool (Tavily) | Una sola vez: si match insuficiente, refina query con info externa. |
+| `web_enrich_retry` | Tool (Tavily) | Una sola vez: si match insuficiente, refina query con info externa — luego vuelve a `query_rewrite` para re-traducir con el contexto extra. |
 | `rank_and_explain` | LLM | Rerankea con texto justificación y arma respuesta natural. |
 | `guardrail_check` | LLM | Valida que el output no inventa datos ni se sale del scope. |
 | `emit_response` | Marker | Persiste mensaje + dispara eventos analytics + responde al cliente. |
+
+### Data augmentation en la ingesta (lado complementario)
+
+El query rewrite es la mitad del puzzle. La otra mitad ocurre en `src/lib/services/audience-tags.ts`: **al crear o editar una actividad**, un LLM genera entre 3 y 8 etiquetas de "público ideal" (ej: *"familias con niños"*, *"adultos mayores"*, *"no recomendado para problemas cardíacos"*) que se persisten en `activities.audience_tags TEXT[]` y se concatenan al texto que va al embedder en `src/rag/ingest.ts`.
+
+Resultado: el catálogo en pgvector contiene tanto la descripción técnica original como el vocabulario del público objetivo. Cuando el query reescrito menciona perfiles o condiciones, el matching vectorial encuentra activities con ese vocabulario en sus chunks. **Ningún filtro SQL nuevo** — la magia ocurre 100% en el espacio vectorial (Camino A en INFORME_TP §data augmentation).
 
 ---
 

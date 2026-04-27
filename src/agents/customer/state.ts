@@ -52,6 +52,13 @@ export const CustomerAnnotation = Annotation.Root({
     reducer: (_, update) => update,
     default: () => undefined,
   }),
+  // Reescritura técnica del semanticQuery — la genera query_rewrite usando
+  // vocabulario alineado con el catálogo (dificultad, altitud, perfil del
+  // público). Si no se generó, rag_retrieve cae al semanticQuery original.
+  enrichedQuery: Annotation<string | undefined>({
+    reducer: (_, update) => update,
+    default: () => undefined,
+  }),
   candidates: Annotation<ActivityHit[]>({
     reducer: (_, update) => update,
     default: () => [],

@@ -17,6 +17,7 @@ type ActivityInput = Pick<
   | "startDate"
   | "endDate"
   | "recurrence"
+  | "audienceTags"
 >;
 
 const CHUNK_SIZE = 500;
@@ -95,6 +96,9 @@ export function buildActivityText(a: ActivityInput): string {
   ];
   if (a.altitudeM != null) parts.push(`Altitud máxima: ${a.altitudeM} metros`);
   if (a.elevationGainM != null) parts.push(`Desnivel: ${a.elevationGainM} metros`);
+  if (a.audienceTags && a.audienceTags.length > 0) {
+    parts.push(`Públicos ideales: ${a.audienceTags.join(", ")}.`);
+  }
   return parts.join("\n");
 }
 

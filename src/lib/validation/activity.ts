@@ -16,6 +16,10 @@ export const activityInputSchema = z
     isActive: z.coerce.boolean().default(true),
     // null (o ausente) = actividad one-time. Ver docs/INFORME_TP.md §4.13.
     recurrence: recurrenceSchema.nullable().optional(),
+    // Tags de público ideal — opcional en input. Si vienen vacíos o ausentes,
+    // el service genera tags vía LLM (data augmentation). Si el admin manda
+    // un array, se respeta tal cual y se skipea la generación.
+    audienceTags: z.array(z.string().min(1).max(80)).optional(),
   })
   .refine((d) => d.endDate >= d.startDate, {
     message: "endDate debe ser >= startDate",

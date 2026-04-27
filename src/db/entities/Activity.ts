@@ -64,6 +64,18 @@ export class Activity {
   })
   availableDates!: string[];
 
+  // Etiquetas de "público ideal" generadas por LLM en la ingesta. Se concatenan
+  // al texto que va al embedder para enriquecer el match semántico (ver
+  // src/lib/services/audience-tags.ts y docs/INFORME_TP.md §data augmentation).
+  // El admin puede editarlas manualmente desde el form si el LLM se equivocó.
+  @Column({
+    type: "text",
+    array: true,
+    name: "audience_tags",
+    default: () => "'{}'",
+  })
+  audienceTags!: string[];
+
   @CreateDateColumn({ type: "timestamptz", name: "created_at" })
   createdAt!: Date;
 
