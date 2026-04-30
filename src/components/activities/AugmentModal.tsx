@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { AIBadge } from "@/components/ui/AIBadge";
+import { Spinner } from "@/components/ui/Spinner";
+import { PhaseDot } from "@/components/ui/PhaseDot";
+import { ChatErrorBanner } from "@/components/ui/ChatErrorBanner";
 
 // Shape del form que consume el componente padre (ActivityForm).
 // Los campos numéricos vienen como string (inputs de texto) — al aplicar
@@ -67,7 +71,7 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
   const [phase, setPhase] = useState<string | null>(null);
   const [phaseLog, setPhaseLog] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [hasError, setHasError] = useState(false);
   const [proposal, setProposal] = useState<EditableProposal | null>(null);
   const [ragNotes, setRagNotes] = useState<string>("");
   const [sources, setSources] = useState<Source[]>([]);
@@ -83,7 +87,7 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
     setPhase(null);
     setPhaseLog([]);
     setLoading(true);
-    setError(null);
+    setHasError(false);
     setProposal(null);
     setRagNotes("");
     setSources([]);
@@ -99,7 +103,8 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
       })
       .catch((err) => {
         if (abort.signal.aborted) return;
-        setError(err instanceof Error ? err.message : "Error");
+        console.error("[augment-modal] request failed:", err);
+        setHasError(true);
         setLoading(false);
       });
 
@@ -233,7 +238,7 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
     setPhase(null);
     setPhaseLog([]);
     setLoading(true);
-    setError(null);
+    setHasError(false);
     setProposal(null);
     setRagNotes("");
     setSources([]);
@@ -246,25 +251,30 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
         setLoading(false);
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : "Error");
+        console.error("[augment-modal] request failed:", err);
+        setHasError(true);
         setLoading(false);
       });
   }
 
   if (!open) return null;
 
+  // El estado `phase` se setea para tracking interno; lo referenciamos para
+  // que el linter no marque como unused (la UI usa `phaseLog`).
+  void phase;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 bg-black/50"
+        className="absolute inset-0 bg-modal-backdrop backdrop-blur-sm"
         onClick={onClose}
         aria-hidden="true"
       />
-      <div className="relative bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        <header className="p-4 border-b flex items-start justify-between">
+      <div className="relative bg-surface-secondary border border-soft rounded-lg shadow-l2 max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col text-text-primary">
+        <header className="px-6 py-4 border-b border-soft flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold">Aumentar con IA</h2>
-            <p className="text-xs text-gray-500 mt-1">
+            <h2 className="text-h3 text-text-primary">Aumentar con IA</h2>
+            <p className="text-btn text-text-tertiary mt-1">
               Investigamos en la web y reescribimos los campos para optimizar la
               búsqueda semántica. Revisá, editá y aplicá.
             </p>
@@ -272,38 +282,33 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
           <button
             type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-lg leading-none"
+            className="text-text-tertiary hover:text-text-primary text-xl leading-none transition-colors"
             aria-label="Cerrar"
           >
             ×
           </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
           {loading && (
-            <div className="space-y-2">
+            <div className="space-y-3 pl-1 animate-fade-in">
               {phaseLog.map((p, i) => {
                 const isLast = i === phaseLog.length - 1;
                 return (
-                  <div
-                    key={i}
-                    className={`flex items-center gap-2 text-sm ${
-                      isLast ? "text-gray-700" : "text-gray-400"
-                    }`}
-                  >
-                    {isLast ? (
-                      <Spinner />
-                    ) : (
-                      <span className="h-4 w-4 flex items-center justify-center text-green-600">
-                        ✓
-                      </span>
-                    )}
-                    <span>{PHASE_LABELS[p] ?? p}</span>
+                  <div key={i} className="flex items-center gap-3 text-btn">
+                    <PhaseDot active={isLast} />
+                    <span
+                      className={
+                        isLast ? "text-text-primary" : "text-text-tertiary"
+                      }
+                    >
+                      {PHASE_LABELS[p] ?? p}
+                    </span>
                   </div>
                 );
               })}
               {phaseLog.length === 0 && (
-                <div className="flex items-center gap-2 text-sm text-gray-500">
+                <div className="flex items-center gap-3 text-btn text-text-tertiary">
                   <Spinner />
                   <span>Iniciando…</span>
                 </div>
@@ -311,35 +316,28 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
             </div>
           )}
 
-          {error && !loading && (
-            <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded text-sm">
-              <p className="font-medium mb-1">No pude completar la propuesta</p>
-              <p className="whitespace-pre-wrap">{error}</p>
-              <button
-                type="button"
-                onClick={handleRetry}
-                className="mt-2 text-sm px-3 py-1.5 border border-red-300 rounded hover:bg-red-100"
-              >
-                Reintentar
-              </button>
-            </div>
+          {hasError && !loading && (
+            <ChatErrorBanner
+              onRetry={handleRetry}
+              message="No pude completar la propuesta. Reintentá en unos segundos."
+            />
           )}
 
-          {!loading && !error && proposal && (
+          {!loading && !hasError && proposal && (
             <>
               {sources.length > 0 && (
-                <div className="bg-gray-50 border border-gray-200 rounded p-3 text-xs">
-                  <p className="font-medium mb-1 text-gray-700">
+                <div className="bg-surface-secondary border border-soft rounded-lg p-4">
+                  <p className="text-h4 text-text-primary mb-2">
                     Fuentes consultadas
                   </p>
-                  <ul className="space-y-0.5">
+                  <ul className="space-y-1">
                     {sources.map((s, i) => (
                       <li key={i}>
                         <a
                           href={s.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline break-all"
+                          className="text-link text-brand-primary hover:text-brand-accent break-all transition-colors"
                         >
                           {s.title || s.url}
                         </a>
@@ -350,11 +348,14 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
               )}
 
               {ragNotes.trim() && (
-                <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-900">
-                  <p className="font-medium mb-0.5">
-                    Ajustes para mejor búsqueda
-                  </p>
-                  <p>{ragNotes}</p>
+                <div className="bg-info-bg border border-info-border text-text-primary rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AIBadge label="RAG" />
+                    <p className="text-h4 text-text-primary">
+                      Ajustes para mejor búsqueda
+                    </p>
+                  </div>
+                  <p className="text-body text-text-primary">{ragNotes}</p>
                 </div>
               )}
 
@@ -412,11 +413,11 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
           )}
         </div>
 
-        <footer className="p-4 border-t flex gap-2 justify-end">
+        <footer className="px-6 py-4 border-t border-soft flex gap-2 justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 border rounded text-sm"
+            className="btn-secondary"
           >
             Cancelar
           </button>
@@ -424,7 +425,7 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
             type="button"
             onClick={handleApply}
             disabled={loading || !proposal}
-            className="bg-black text-white px-4 py-2 rounded text-sm disabled:opacity-50"
+            className="btn-primary"
           >
             Usar propuesta
           </button>
@@ -453,13 +454,13 @@ function ProposalField({
 
   return (
     <div>
-      <label className="block text-sm font-medium mb-1">{label}</label>
+      <label className="block text-h4 text-text-primary mb-2">{label}</label>
       {type === "textarea" ? (
         <textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
           rows={rows ?? 3}
-          className="input"
+          className="input min-h-[80px]"
         />
       ) : (
         <input
@@ -471,11 +472,11 @@ function ProposalField({
         />
       )}
       {hasOriginal && (
-        <details className="mt-1 text-xs text-gray-500">
-          <summary className="cursor-pointer hover:text-gray-700">
+        <details className="mt-2 text-btn text-text-tertiary">
+          <summary className="cursor-pointer hover:text-text-primary transition-colors">
             Ver original
           </summary>
-          <pre className="mt-1 p-2 bg-gray-50 border border-gray-200 rounded whitespace-pre-wrap font-sans text-xs">
+          <pre className="mt-2 p-3 bg-surface-secondary border border-soft rounded-md whitespace-pre-wrap font-sans text-btn text-text-primary">
             {original}
           </pre>
         </details>
@@ -484,8 +485,3 @@ function ProposalField({
   );
 }
 
-function Spinner() {
-  return (
-    <div className="h-4 w-4 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
-  );
-}

@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { AugmentModal, type AugmentPatch } from "./AugmentModal";
+import { Spinner } from "@/components/ui/Spinner";
 import type { Recurrence, WeekDay } from "@/lib/validation/recurrence";
 
 type RecurrenceKind = "once" | "weekly" | "dates";
@@ -78,6 +79,12 @@ const WEEK_DAYS: { key: WeekDay; label: string }[] = [
   { key: "fri", label: "Vie" },
   { key: "sat", label: "Sáb" },
   { key: "sun", label: "Dom" },
+];
+
+const RECURRENCE_OPTIONS: { value: RecurrenceKind; label: string }[] = [
+  { value: "once", label: "Una vez" },
+  { value: "weekly", label: "Semanal" },
+  { value: "dates", label: "Fechas específicas" },
 ];
 
 export function ActivityForm({ initial }: { initial?: ActivityFormInitial }) {
@@ -302,12 +309,8 @@ export function ActivityForm({ initial }: { initial?: ActivityFormInitial }) {
     recurrenceKind === "once" ? "Fecha y hora de fin" : "Válida hasta";
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 max-w-3xl">
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded text-sm whitespace-pre-wrap">
-          {error}
-        </div>
-      )}
+    <form onSubmit={handleSubmit} className="space-y-8 max-w-3xl">
+      {error && <ErrorBanner>{error}</ErrorBanner>}
 
       <Field label="Título" required>
         <input
@@ -326,74 +329,26 @@ export function ActivityForm({ initial }: { initial?: ActivityFormInitial }) {
           rows={5}
           value={values.description}
           onChange={set("description")}
-          className="input"
+          className="input min-h-[80px]"
         />
       </Field>
 
       <Field label="Imagen">
-        <input
-          type="file"
-          accept="image/*"
-          onChange={handleImageUpload}
-          disabled={uploading}
-          className="text-sm"
+        <ImageUploadBlock
+          uploading={uploading}
+          imageUrl={values.imageUrl}
+          onUpload={handleImageUpload}
+          onRemove={() => setValues((v) => ({ ...v, imageUrl: "" }))}
         />
-        {uploading && (
-          <span className="ml-2 text-sm text-gray-500">Subiendo...</span>
-        )}
-        {values.imageUrl && (
-          <div className="mt-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={values.imageUrl}
-              alt=""
-              className="max-h-48 rounded border"
-            />
-            <button
-              type="button"
-              onClick={() => setValues((v) => ({ ...v, imageUrl: "" }))}
-              className="text-sm text-red-600 hover:underline mt-1 block"
-            >
-              Quitar imagen
-            </button>
-          </div>
-        )}
       </Field>
 
       <Field label="Tipo de horario" required>
-        <div className="flex flex-wrap gap-4 text-sm">
-          <label className="flex items-center gap-2">
-            <input
-              type="radio"
-              name="recurrenceKind"
-              value="once"
-              checked={recurrenceKind === "once"}
-              onChange={() => changeRecurrenceKind("once")}
-            />
-            <span>Una vez</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="radio"
-              name="recurrenceKind"
-              value="weekly"
-              checked={recurrenceKind === "weekly"}
-              onChange={() => changeRecurrenceKind("weekly")}
-            />
-            <span>Semanal</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="radio"
-              name="recurrenceKind"
-              value="dates"
-              checked={recurrenceKind === "dates"}
-              onChange={() => changeRecurrenceKind("dates")}
-            />
-            <span>Fechas específicas</span>
-          </label>
-        </div>
-        <p className="text-xs text-gray-500 mt-1">
+        <SegmentedControl
+          options={RECURRENCE_OPTIONS}
+          value={recurrenceKind}
+          onChange={changeRecurrenceKind}
+        />
+        <p className="mt-2 text-btn text-text-tertiary">
           {recurrenceKind === "once" &&
             "Una única ocurrencia en la fecha y hora indicadas."}
           {recurrenceKind === "weekly" &&
@@ -425,7 +380,7 @@ export function ActivityForm({ initial }: { initial?: ActivityFormInitial }) {
       </div>
 
       {recurrenceKind === "weekly" && (
-        <div className="border rounded p-3 space-y-3 bg-gray-50">
+        <SectionBlock>
           <Field label="Días de la semana" required>
             <div className="flex flex-wrap gap-2">
               {WEEK_DAYS.map((d) => {
@@ -433,10 +388,10 @@ export function ActivityForm({ initial }: { initial?: ActivityFormInitial }) {
                 return (
                   <label
                     key={d.key}
-                    className={`px-3 py-1 border rounded cursor-pointer text-sm select-none ${
+                    className={`px-3 py-1.5 rounded-full cursor-pointer text-btn select-none transition-colors border ${
                       checked
-                        ? "bg-black text-white border-black"
-                        : "bg-white border-gray-300 hover:bg-gray-100"
+                        ? "bg-brand-primary text-white border-brand-primary"
+                        : "bg-transparent text-text-primary border-medium hover:bg-surface-soft"
                     }`}
                   >
                     <input
@@ -472,11 +427,11 @@ export function ActivityForm({ initial }: { initial?: ActivityFormInitial }) {
               />
             </Field>
           </div>
-        </div>
+        </SectionBlock>
       )}
 
       {recurrenceKind === "dates" && (
-        <div className="border rounded p-3 space-y-3 bg-gray-50">
+        <SectionBlock>
           <Field label="Fechas específicas" required>
             <div className="flex gap-2 items-center">
               <input
@@ -488,27 +443,27 @@ export function ActivityForm({ initial }: { initial?: ActivityFormInitial }) {
               <button
                 type="button"
                 onClick={addSpecificDate}
-                className="px-3 py-2 border border-black rounded text-sm hover:bg-white disabled:opacity-40"
                 disabled={!newDateInput}
+                className="btn-secondary border border-medium hover:text-text-primary"
               >
                 Agregar
               </button>
             </div>
             {specificDates.length > 0 && (
-              <ul className="mt-2 flex flex-wrap gap-2">
+              <ul className="mt-3 flex flex-wrap gap-2">
                 {specificDates.map((d) => (
                   <li
                     key={d}
-                    className="flex items-center gap-1 bg-white border rounded px-2 py-1 text-sm"
+                    className="flex items-center gap-2 bg-surface-secondary border border-medium rounded-full px-3 py-1 text-btn text-text-primary"
                   >
                     <span>{d}</span>
                     <button
                       type="button"
                       onClick={() => removeSpecificDate(d)}
-                      className="text-red-600 hover:underline text-xs ml-1"
+                      className="text-text-tertiary hover:text-text-primary leading-none transition-colors"
                       aria-label={`Quitar ${d}`}
                     >
-                      x
+                      ×
                     </button>
                   </li>
                 ))}
@@ -536,7 +491,7 @@ export function ActivityForm({ initial }: { initial?: ActivityFormInitial }) {
               />
             </Field>
           </div>
-        </div>
+        </SectionBlock>
       )}
 
       <Field label="Requisitos" required>
@@ -545,7 +500,7 @@ export function ActivityForm({ initial }: { initial?: ActivityFormInitial }) {
           rows={3}
           value={values.requirements}
           onChange={set("requirements")}
-          className="input"
+          className="input min-h-[80px]"
         />
       </Field>
 
@@ -555,7 +510,7 @@ export function ActivityForm({ initial }: { initial?: ActivityFormInitial }) {
           rows={3}
           value={values.physicalPrep}
           onChange={set("physicalPrep")}
-          className="input"
+          className="input min-h-[80px]"
         />
       </Field>
 
@@ -591,20 +546,21 @@ export function ActivityForm({ initial }: { initial?: ActivityFormInitial }) {
         </Field>
       </div>
 
-      <label className="flex items-center gap-2 text-sm">
+      <label className="flex items-center gap-2 text-body text-text-primary cursor-pointer select-none">
         <input
           type="checkbox"
           checked={values.isActive}
           onChange={set("isActive")}
+          className="h-4 w-4 accent-brand-primary"
         />
         <span>Activa (visible para clientes)</span>
       </label>
 
-      <div className="flex gap-2 pt-2">
+      <div className="flex flex-wrap gap-3 pt-4 border-t border-soft">
         <button
           type="submit"
           disabled={submitting || uploading}
-          className="bg-black text-white px-4 py-2 rounded text-sm disabled:opacity-50"
+          className="btn-primary"
         >
           {submitting ? "Guardando..." : isEdit ? "Actualizar" : "Crear"}
         </button>
@@ -617,14 +573,14 @@ export function ActivityForm({ initial }: { initial?: ActivityFormInitial }) {
               ? "Agregá un título primero para aumentar con IA"
               : "Completamos y reescribimos los campos a partir del título + info web"
           }
-          className="px-4 py-2 border border-black text-black rounded text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="h-8 px-3 rounded-full bg-transparent border border-brand-primary/30 text-brand-accent text-btn font-medium hover:bg-brand-primary/[0.08] hover:border-brand-primary/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Aumentar con IA
         </button>
         <button
           type="button"
           onClick={() => router.push("/admin/activities")}
-          className="px-4 py-2 border rounded text-sm"
+          className="btn-secondary"
         >
           Cancelar
         </button>
@@ -656,10 +612,125 @@ function Field({
 }) {
   return (
     <div>
-      <label className="block text-sm font-medium mb-1">
+      <label className="block text-h4 text-text-primary mb-2">
         {label}
-        {required && <span className="text-red-600 ml-0.5">*</span>}
+        {required && (
+          <span className="text-brand-primary ml-0.5" aria-hidden="true">
+            *
+          </span>
+        )}
       </label>
+      {children}
+    </div>
+  );
+}
+
+function SectionBlock({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="bg-surface-secondary border border-soft rounded-lg p-6 space-y-4">
+      {children}
+    </div>
+  );
+}
+
+function SegmentedControl<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      className="inline-flex p-1 rounded-full bg-surface-secondary border border-medium gap-1"
+    >
+      {options.map((opt) => {
+        const checked = opt.value === value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={checked}
+            onClick={() => onChange(opt.value)}
+            className={`h-7 px-4 rounded-full text-btn font-medium transition-colors ${
+              checked
+                ? "bg-brand-primary text-white"
+                : "bg-transparent text-text-tertiary hover:text-text-primary"
+            }`}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ImageUploadBlock({
+  uploading,
+  imageUrl,
+  onUpload,
+  onRemove,
+}: {
+  uploading: boolean;
+  imageUrl: string;
+  onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="bg-surface-secondary border border-soft rounded-lg p-4 space-y-3">
+      <label className="flex flex-col gap-2">
+        <span className="text-btn text-text-tertiary">
+          Seleccioná un archivo (JPG, PNG, WebP)
+        </span>
+        <input
+          type="file"
+          accept="image/*"
+          onChange={onUpload}
+          disabled={uploading}
+          className="text-btn text-text-primary
+            file:mr-3 file:h-8 file:px-3 file:rounded-full
+            file:border-0 file:text-btn file:font-medium
+            file:bg-cta-bg file:text-text-on-cta
+            file:cursor-pointer hover:file:bg-cta-bg-hover
+            file:transition-colors
+            disabled:opacity-50"
+        />
+      </label>
+      {uploading && (
+        <div className="flex items-center gap-2 text-btn text-text-tertiary">
+          <Spinner size={14} />
+          <span>Subiendo...</span>
+        </div>
+      )}
+      {imageUrl && (
+        <div className="space-y-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imageUrl}
+            alt=""
+            className="max-h-48 rounded-lg border border-soft"
+          />
+          <button
+            type="button"
+            onClick={onRemove}
+            className="text-btn text-text-tertiary hover:text-text-primary transition-colors"
+          >
+            Quitar imagen
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ErrorBanner({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="bg-warning-bg/40 border border-warning-border/40 text-warning p-3 rounded-md text-body whitespace-pre-wrap">
       {children}
     </div>
   );

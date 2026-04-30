@@ -1,9 +1,178 @@
+@import url("https://rsms.me/inter/inter.css");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/*
+  Theme tokens — los valores son tripletas rgb (separadas por espacio) para que
+  Tailwind pueda aplicar el modificador de opacidad `/X`. Los tokens transparentes
+  (rgba directo) van con `var(--xxx)` en tailwind.config y no aceptan `/X`.
+
+  Default = light. El dark mode se activa con `data-theme="dark"` en <html>.
+*/
+@layer base {
+  :root {
+    /* Surfaces */
+    --surface-primary: 255 255 255;       /* page bg */
+    --surface-secondary: 247 248 248;     /* panels, bubbles */
+    --surface-tertiary: 239 240 241;      /* hover bg, sutil */
+    --surface-overlay: 247 248 248;       /* modal container bg */
+
+    /* Text */
+    --text-primary: 8 9 10;
+    --text-secondary: 98 102 109;         /* gris medio — funciona en ambos */
+    --text-tertiary: 138 143 152;         /* gris claro — funciona en ambos */
+    --text-muted: 56 59 63;                /* darker gray para hover state */
+    --text-on-cta: 255 255 255;
+
+    /* CTA (button principal) */
+    --cta-bg: 8 9 10;                      /* dark button on light bg */
+    --cta-bg-hover: 35 37 42;
+
+    /* State colors */
+    --warning: 180 125 26;                  /* texto warning sobre warning-bg */
+    --warning-bg: 250 230 180;              /* bg solido amarillo cremoso */
+    --warning-border: 232 209 153;          /* border amber */
+    --danger: 201 42 42;                    /* texto destructivo */
+    --danger-hover: 185 28 28;              /* hover */
+
+    /* Transparentes (rgba) — sin alpha modifier */
+    --border-soft: rgba(0, 0, 0, 0.06);     /* separadores muy sutiles */
+    --border-medium: rgba(0, 0, 0, 0.10);   /* borders de input/card */
+    --border-strong: rgba(0, 0, 0, 0.14);   /* hover de border-medium */
+    --bg-input: rgba(0, 0, 0, 0.02);
+    --bg-surface-soft: rgba(0, 0, 0, 0.03); /* bg sutil para hover de filas */
+    --bg-modal-backdrop: rgba(8, 9, 10, 0.40);
+    --danger-bg: rgba(201, 42, 42, 0.08);   /* hover ghost danger */
+    --info-bg: rgba(94, 106, 210, 0.08);    /* panel info */
+    --info-border: rgba(94, 106, 210, 0.20);
+
+    /* Shadows — se ajustan por tema (más opacas en dark, sutiles en light) */
+    --shadow-l1: 0 1px 0 0 rgba(0, 0, 0, 0.08);
+    --shadow-l2:
+      rgba(0, 0, 0, 0) 0 8px 2px 0,
+      rgba(0, 0, 0, 0.02) 0 5px 2px 0,
+      rgba(0, 0, 0, 0.06) 0 3px 2px 0,
+      rgba(0, 0, 0, 0.10) 0 1px 1px 0,
+      rgba(0, 0, 0, 0.12) 0 0 1px 0;
+    --shadow-input: rgba(0, 0, 0, 0.04) 0 0 0 1px;
+  }
+
+  [data-theme="dark"] {
+    --surface-primary: 15 16 17;
+    --surface-secondary: 20 21 22;
+    --surface-tertiary: 26 27 30;
+    --surface-overlay: 8 9 10;
+
+    --text-primary: 247 248 248;
+    --text-secondary: 98 102 109;
+    --text-tertiary: 138 143 152;
+    --text-muted: 180 188 208;
+    --text-on-cta: 8 9 10;
+
+    --cta-bg: 229 229 230;
+    --cta-bg-hover: 218 218 219;
+
+    --warning: 240 198 116;
+    --warning-bg: 58 46 28;
+    --warning-border: 94 74 38;
+    --danger: 229 72 77;
+    --danger-hover: 255 99 105;
+
+    --border-soft: rgba(255, 255, 255, 0.05);
+    --border-medium: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.14);
+    --bg-input: rgba(255, 255, 255, 0.02);
+    --bg-surface-soft: rgba(255, 255, 255, 0.03);
+    --bg-modal-backdrop: rgba(8, 9, 10, 0.80);
+    --danger-bg: rgba(229, 72, 77, 0.10);
+    --info-bg: rgba(94, 106, 210, 0.08);
+    --info-border: rgba(94, 106, 210, 0.20);
+
+    --shadow-l1: 0 1px 0 0 rgba(0, 0, 0, 0.40);
+    --shadow-l2:
+      rgba(0, 0, 0, 0) 0 8px 2px 0,
+      rgba(0, 0, 0, 0.01) 0 5px 2px 0,
+      rgba(0, 0, 0, 0.04) 0 3px 2px 0,
+      rgba(0, 0, 0, 0.07) 0 1px 1px 0,
+      rgba(0, 0, 0, 0.08) 0 0 1px 0;
+    --shadow-input: rgba(0, 0, 0, 0.20) 0 0 0 1px;
+  }
+
+  html,
+  body {
+    @apply bg-surface-primary text-text-primary font-sans antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    /* Transición suave al cambiar tema. Solo bg/colores, no layout. */
+    transition: background-color 200ms ease, color 200ms ease;
+  }
+
+  ::selection {
+    background-color: rgba(94, 106, 210, 0.35);
+  }
+}
+
 @layer components {
+  /* Receta canónica de input — adapta a tema via vars + focus glow indigo. */
   .input {
-    @apply w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-black;
+    @apply h-8 w-full px-3.5 py-3
+           bg-input
+           border border-medium rounded-md
+           text-[13.33px] text-text-primary
+           focus:outline-none focus:border-brand-primary
+           focus:ring-4 focus:ring-brand-primary/15
+           shadow-input
+           placeholder:text-text-tertiary
+           disabled:opacity-50
+           transition-shadow;
+  }
+
+  /* Glow utility — pegale a cualquier interactive que quieras "alive on focus".
+     Ej: chips, botones secundarios. NO usar en btn-primary (ya tiene shadow-l2). */
+  .focus-glow {
+    @apply focus-visible:outline-none
+           focus-visible:ring-4 focus-visible:ring-brand-primary/15;
+  }
+
+  /* Botón primary del sistema (CTA bg + L2). */
+  .btn-primary {
+    @apply h-8 px-3 rounded-full
+           bg-cta-bg text-text-on-cta
+           text-btn font-medium
+           shadow-l2
+           hover:bg-cta-bg-hover
+           transition-colors
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Botón secondary ghost. */
+  .btn-secondary {
+    @apply h-8 px-3 rounded-full
+           bg-transparent text-text-tertiary
+           text-btn font-normal
+           hover:text-text-muted
+           transition-colors
+           disabled:opacity-40;
+  }
+
+  /* Card estándar. */
+  .card-dark {
+    @apply bg-surface-primary
+           border border-soft
+           rounded-lg
+           text-text-primary;
+  }
+
+  /* Dot-grid pattern — textura técnica sutil para backgrounds.
+     Aplicar sobre containers; respeta el tema gracias a las vars. */
+  .dot-grid {
+    background-image: radial-gradient(
+      circle,
+      rgb(var(--text-tertiary) / 0.18) 1px,
+      transparent 1px
+    );
+    background-size: 24px 24px;
+    background-position: 0 0;
   }
 }
