@@ -1,6 +1,7 @@
 import { ChatGroq } from "@langchain/groq";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatOllama } from "@langchain/ollama";
+import { ChatOpenAI } from "@langchain/openai";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
@@ -18,7 +19,7 @@ import { createLogger } from "@/lib/logger";
 
 const log = createLogger("agent:llm");
 
-type Provider = "groq" | "gemini" | "ollama";
+type Provider = "groq" | "gemini" | "ollama" | "openai";
 
 type LLMOptions = {
   temperature?: number;
@@ -28,9 +29,14 @@ type LLMOptions = {
 
 function getProvider(): Provider {
   const raw = (process.env.LLM_PROVIDER ?? "gemini").toLowerCase();
-  if (raw !== "groq" && raw !== "gemini" && raw !== "ollama") {
+  if (
+    raw !== "groq" &&
+    raw !== "gemini" &&
+    raw !== "ollama" &&
+    raw !== "openai"
+  ) {
     throw new Error(
-      `LLM_PROVIDER inválido: "${raw}". Valores permitidos: "groq" | "gemini" | "ollama".`,
+      `LLM_PROVIDER inválido: "${raw}". Valores permitidos: "groq" | "gemini" | "ollama" | "openai".`,
     );
   }
   return raw;
@@ -42,6 +48,9 @@ function getActiveModel(p: Provider): string {
   }
   if (p === "groq") {
     return process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
+  }
+  if (p === "openai") {
+    return process.env.OPENAI_MODEL ?? "gpt-4o-mini";
   }
   // ollama
   return process.env.OLLAMA_MODEL ?? "qwen2.5:7b-instruct";
@@ -277,6 +286,21 @@ function parseProviderError(
     };
   }
 
+  if (provider === "openai") {
+    // El SDK oficial expone el status como propiedad del error (APIError),
+    // pero al stringify queda cualquiera de estos formatos típicos:
+    // - "401 Incorrect API key provided..."
+    // - "RateLimitError: 429 Rate limit reached..."
+    // - "BadRequestError: 400 Invalid value..."
+    const statusMatch =
+      raw.match(/\b(4\d{2}|5\d{2})\b/) ||
+      raw.match(/status[\s:=]+(\d{3})/i);
+    return {
+      status: statusMatch ? Number(statusMatch[1]) : undefined,
+      reason: raw,
+    };
+  }
+
   return { reason: raw };
 }
 
@@ -478,9 +502,29 @@ function createOllamaLLM(options: LLMOptions): BaseChatModel {
   });
 }
 
+function createOpenAILLM(options: LLMOptions): BaseChatModel {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "OPENAI_API_KEY no está definido. Sacá una key en https://platform.openai.com/api-keys y ponela en .env.",
+    );
+  }
+  // OpenAI es la implementación de referencia para tool calling — no necesita
+  // sanitizer de schema (acepta JSON Schema draft-07 estándar). El wrapper le
+  // suma timeout + parseo de errores 4xx/5xx igual que a los otros cloud.
+  const base = new ChatOpenAI({
+    apiKey,
+    model: options.model ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+    temperature: options.temperature ?? 0.2,
+    maxTokens: options.maxTokens,
+  });
+  return wrapWithObservability(base, "openai");
+}
+
 export function createLLM(options: LLMOptions = {}): BaseChatModel {
   const provider = getProvider();
   if (provider === "gemini") return createGeminiLLM(options);
   if (provider === "groq") return createGroqLLM(options);
+  if (provider === "openai") return createOpenAILLM(options);
   return createOllamaLLM(options);
 }

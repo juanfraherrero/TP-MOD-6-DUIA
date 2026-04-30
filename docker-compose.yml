@@ -10,6 +10,8 @@ services:
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
       # Ollama — cuando se corre con `--profile ollama`, el service `ollama`
       # está disponible en la red de compose y la URL es http://ollama:11434.
       # Si `LLM_PROVIDER=ollama` pero corrés sin el profile, tenés que apuntar
