@@ -2,6 +2,10 @@
 
 import { useState, useRef, useEffect, type FormEvent } from "react";
 import { track, getSessionId } from "@/lib/analytics/track";
+import { AIBadge } from "@/components/ui/AIBadge";
+import { PhaseDot } from "@/components/ui/PhaseDot";
+import { AuroraBackground } from "@/components/ui/AuroraBackground";
+import { ChatErrorBanner } from "@/components/ui/ChatErrorBanner";
 
 type ActivityHit = {
   id: string;
@@ -40,11 +44,21 @@ const PHASE_LABELS: Record<string, string> = {
   emit_response: "Finalizando",
 };
 
+const SUGGESTIONS = [
+  "quiero hacer trekking en Patagonia con presupuesto 80k",
+  "Sierra de la Ventana",
+  "algo tranquilo para mi abuela",
+];
+
 function renderMarkdownLite(text: string): React.ReactNode[] {
   const parts = text.split(/(\*\*[^*]+\*\*)/);
   return parts.map((part, i) => {
     if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={i}>{part.slice(2, -2)}</strong>;
+      return (
+        <strong key={i} className="font-semibold text-text-primary">
+          {part.slice(2, -2)}
+        </strong>
+      );
     }
     return <span key={i}>{part}</span>;
   });
@@ -56,7 +70,7 @@ export function CustomerChat() {
   const [phase, setPhase] = useState<string | null>(null);
   const [phaseLog, setPhaseLog] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [hasError, setHasError] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Page view inicial + warm up del sessionId.
@@ -67,26 +81,15 @@ export function CustomerChat() {
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, phase, phaseLog]);
+  }, [messages, phase, phaseLog, hasError]);
 
-  async function send(e: FormEvent) {
-    e.preventDefault();
-    const text = input.trim();
-    if (!text || loading) return;
-
-    const userMsgIndex = messages.filter((m) => m.role === "user").length;
-    track("chat_message_sent", {
-      messageIndex: userMsgIndex,
-      length: text.length,
-    });
-
-    const newMessages: Msg[] = [...messages, { role: "user", content: text }];
-    setMessages(newMessages);
-    setInput("");
+  // Núcleo del request — recibe los mensajes a mandar (incluyendo el último
+  // user message) y maneja el SSE. Tanto send() como retry() lo invocan.
+  async function callApi(messagesToSend: Msg[]) {
     setLoading(true);
     setPhase(null);
     setPhaseLog([]);
-    setError(null);
+    setHasError(false);
 
     try {
       const res = await fetch("/api/chat/customer", {
@@ -94,7 +97,10 @@ export function CustomerChat() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sessionId: getSessionId(),
-          messages: newMessages.map(({ role, content }) => ({ role, content })),
+          messages: messagesToSend.map(({ role, content }) => ({
+            role,
+            content,
+          })),
         }),
       });
 
@@ -161,7 +167,7 @@ export function CustomerChat() {
       }
 
       setMessages([
-        ...newMessages,
+        ...messagesToSend,
         {
           role: "assistant",
           content: finalResponse ?? "No pude generar una respuesta.",
@@ -170,30 +176,54 @@ export function CustomerChat() {
         },
       ]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error");
+      // El error técnico se loguea acá, no se muestra al usuario.
+      console.error("[customer-chat] request failed:", err);
+      setHasError(true);
     } finally {
       setLoading(false);
       setPhase(null);
     }
   }
 
+  async function send(e: FormEvent) {
+    e.preventDefault();
+    const text = input.trim();
+    if (!text || loading) return;
+
+    const userMsgIndex = messages.filter((m) => m.role === "user").length;
+    track("chat_message_sent", {
+      messageIndex: userMsgIndex,
+      length: text.length,
+    });
+
+    const newMessages: Msg[] = [...messages, { role: "user", content: text }];
+    setMessages(newMessages);
+    setInput("");
+    callApi(newMessages);
+  }
+
+  function retry() {
+    if (loading) return;
+    // messages ya contiene el último user message que falló — re-ejecutamos
+    // con esa misma cola.
+    callApi(messages);
+  }
+
   return (
-    <div className="flex flex-col h-screen max-w-3xl mx-auto bg-white">
-      <header className="p-4 border-b">
-        <h1 className="text-xl font-semibold">Agencia de Turismo — Asesor</h1>
-        <p className="text-sm text-gray-500">
+    <div className="flex flex-col h-screen w-full max-w-6xl mx-auto bg-surface-primary">
+      <header className="px-4 sm:px-6 h-18 flex flex-col justify-center shadow-l1">
+        <h1 className="text-h3 text-text-primary">Agencia de Turismo — Asesor</h1>
+        <p className="text-[13px] leading-[19.5px] text-text-secondary mt-0.5">
           Contame qué tenés ganas de hacer y te armo un ranking de propuestas.
         </p>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
         {messages.length === 0 && (
-          <div className="text-gray-400 text-sm text-center py-8 space-y-2">
-            <p>Probá con algo como:</p>
-            <p className="italic">&ldquo;quiero hacer trekking en Patagonia con presupuesto 80k&rdquo;</p>
-            <p className="italic">&ldquo;Sierra de la Ventana&rdquo;</p>
-            <p className="italic">&ldquo;algo tranquilo para mi abuela&rdquo;</p>
-          </div>
+          <EmptyState
+            disabled={loading}
+            onPick={(s) => setInput(s)}
+          />
         )}
 
         {messages.map((m, i) => (
@@ -201,56 +231,68 @@ export function CustomerChat() {
         ))}
 
         {loading && (
-          <div className="space-y-2">
+          <div className="space-y-3 pl-1 animate-fade-in">
             {phaseLog.map((p, i) => {
               const isLast = i === phaseLog.length - 1;
               return (
                 <div
                   key={i}
-                  className={`flex items-center gap-2 text-sm ${
-                    isLast ? "text-gray-700" : "text-gray-400"
-                  }`}
+                  className="flex items-center gap-3 text-btn"
                 >
-                  {isLast ? (
-                    <Spinner />
-                  ) : (
-                    <span className="h-4 w-4 flex items-center justify-center text-green-600">
-                      ✓
-                    </span>
-                  )}
-                  <span>{PHASE_LABELS[p] ?? p}</span>
+                  <PhaseDot active={isLast} />
+                  <span
+                    className={
+                      isLast ? "text-text-primary" : "text-text-tertiary"
+                    }
+                  >
+                    {PHASE_LABELS[p] ?? p}
+                  </span>
                 </div>
               );
             })}
           </div>
         )}
 
-        {error && (
-          <div className="text-red-600 text-sm p-3 bg-red-50 border border-red-200 rounded">
-            {error}
-          </div>
-        )}
+        {hasError && !loading && <ChatErrorBanner onRetry={retry} />}
 
         <div ref={scrollRef} />
       </div>
 
-      <form onSubmit={send} className="border-t p-4 flex gap-2">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          disabled={loading}
-          placeholder="Escribí tu mensaje..."
-          className="input flex-1"
-        />
-        <button
-          type="submit"
-          disabled={loading || !input.trim()}
-          className="bg-black text-white px-4 py-2 rounded text-sm disabled:opacity-50"
-        >
-          Enviar
-        </button>
-      </form>
+      <ChatInput
+        value={input}
+        onChange={setInput}
+        onSubmit={send}
+        loading={loading}
+      />
+    </div>
+  );
+}
+
+function EmptyState({
+  disabled,
+  onPick,
+}: {
+  disabled: boolean;
+  onPick: (s: string) => void;
+}) {
+  return (
+    <div className="relative flex flex-col items-center justify-center text-center py-20 space-y-6 animate-fade-in">
+      <AuroraBackground />
+      <AIBadge label="Asistente" />
+      <h2 className="text-h3 text-text-primary">¿Qué viaje tenés en mente?</h2>
+      <div className="flex flex-wrap justify-center gap-2 max-w-xl pt-2">
+        {SUGGESTIONS.map((s) => (
+          <button
+            key={s}
+            type="button"
+            disabled={disabled}
+            onClick={() => onPick(s)}
+            className="focus-glow px-3 h-8 rounded-full bg-surface-soft border border-medium text-btn text-text-muted hover:bg-surface-tertiary hover:border-strong hover:text-text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {s}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -262,7 +304,7 @@ function MessageBubble({ message }: { message: Msg }) {
   if (isUser) {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-lg px-4 py-3 text-sm whitespace-pre-wrap leading-relaxed bg-black text-white">
+        <div className="max-w-[85%] rounded-lg px-4 py-3 text-body whitespace-pre-wrap bg-brand-primary text-white">
           {message.content}
         </div>
       </div>
@@ -270,23 +312,28 @@ function MessageBubble({ message }: { message: Msg }) {
   }
 
   return (
-    <div className="flex justify-start">
-      <div className="max-w-[90%] space-y-3">
-        <div className="rounded-lg px-4 py-3 text-sm whitespace-pre-wrap leading-relaxed bg-gray-100 text-gray-900">
-          {renderMarkdownLite(message.content)}
+    <div className="flex justify-start animate-fade-in">
+      <div className="max-w-[90%] w-full space-y-3">
+        <div className="flex items-center gap-2 pl-1">
+          <AIBadge label="Asesor" />
         </div>
-        {hasProposals && (
-          <div className="space-y-3">
-            {message.ranked!.map((r) => (
-              <ProposalCard key={r.activity.id} proposal={r} />
-            ))}
+        <div className="space-y-4">
+          <div className="rounded-lg px-4 py-3 text-body whitespace-pre-wrap bg-surface-secondary border border-soft text-text-primary">
+            {renderMarkdownLite(message.content)}
           </div>
-        )}
-        {message.closingMessage && (
-          <div className="rounded-lg px-4 py-3 text-sm italic text-gray-700 bg-gray-50 border border-gray-200">
-            {renderMarkdownLite(message.closingMessage)}
-          </div>
-        )}
+          {hasProposals && (
+            <div className="space-y-4">
+              {message.ranked!.map((r) => (
+                <ProposalCard key={r.activity.id} proposal={r} />
+              ))}
+            </div>
+          )}
+          {message.closingMessage && (
+            <div className="rounded-lg px-4 py-3 text-body italic text-text-secondary bg-surface-soft border border-soft">
+              {renderMarkdownLite(message.closingMessage)}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -308,7 +355,7 @@ function ProposalCard({ proposal }: { proposal: RankedProposal }) {
 
   return (
     <div
-      className="border rounded-lg overflow-hidden bg-white hover:shadow-md transition-shadow"
+      className="bg-surface-primary border border-soft rounded-lg overflow-hidden hover:border-strong transition-colors"
       onClick={handleClick}
     >
       {activity.imageUrl && (
@@ -316,24 +363,29 @@ function ProposalCard({ proposal }: { proposal: RankedProposal }) {
         <img
           src={activity.imageUrl}
           alt={activity.title}
-          className="w-full h-40 object-cover"
+          className="w-full h-48 object-cover rounded-t-lg"
         />
       )}
-      <div className="p-4 space-y-2">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1">
-            <div className="text-xs text-gray-400">Propuesta {rank}</div>
-            <h3 className="font-semibold text-sm">{activity.title}</h3>
+      <div className="p-6 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="text-[12.25px] leading-[15.925px] uppercase tracking-wide text-text-secondary mb-1">
+              Propuesta {rank}
+            </div>
+            <h3 className="text-h4 text-text-primary">{activity.title}</h3>
           </div>
-          <div className="text-sm font-semibold whitespace-nowrap">
+          <div
+            className="text-h4 text-text-primary whitespace-nowrap"
+            style={{ fontWeight: 590 }}
+          >
             ${Number(activity.priceArs).toLocaleString("es-AR")}
           </div>
         </div>
-        <p className="text-xs text-gray-500">
+        <p className="text-[13px] leading-[19.5px] text-text-secondary">
           {new Date(activity.startDate).toLocaleDateString("es-AR")} →{" "}
           {new Date(activity.endDate).toLocaleDateString("es-AR")}
         </p>
-        <p className="text-sm text-gray-700 leading-relaxed">{pitch}</p>
+        <p className="text-body text-text-primary">{pitch}</p>
         <div className="flex gap-2 pt-2">
           <button
             type="button"
@@ -342,11 +394,11 @@ function ProposalCard({ proposal }: { proposal: RankedProposal }) {
               handleInterested();
             }}
             disabled={converted}
-            className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors ${
+            className={
               converted
-                ? "bg-green-100 text-green-700 border border-green-300"
-                : "bg-black text-white hover:bg-gray-800"
-            }`}
+                ? "h-8 px-3 rounded-full text-btn font-medium bg-brand-primary/10 text-brand-accent border border-brand-primary/30 cursor-default transition-colors"
+                : "btn-primary"
+            }
           >
             {converted ? "¡Te contactamos!" : "Me interesa"}
           </button>
@@ -356,8 +408,38 @@ function ProposalCard({ proposal }: { proposal: RankedProposal }) {
   );
 }
 
-function Spinner() {
+function ChatInput({
+  value,
+  onChange,
+  onSubmit,
+  loading,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: (e: FormEvent) => void;
+  loading: boolean;
+}) {
   return (
-    <div className="h-4 w-4 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
+    <form
+      onSubmit={onSubmit}
+      className="px-4 sm:px-6 py-3 sm:py-4 flex gap-2 border-t border-soft bg-surface-primary"
+    >
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={loading}
+        placeholder="Escribí tu mensaje..."
+        className="input flex-1"
+      />
+      <button
+        type="submit"
+        disabled={loading || !value.trim()}
+        className="btn-primary"
+      >
+        Enviar
+      </button>
+    </form>
   );
 }
+

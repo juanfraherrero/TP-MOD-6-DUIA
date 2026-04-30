@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useRef, useEffect, type FormEvent } from "react";
+import { AIBadge } from "@/components/ui/AIBadge";
+import { PhaseDot } from "@/components/ui/PhaseDot";
+import { ChatErrorBanner } from "@/components/ui/ChatErrorBanner";
 
 type Msg = {
   role: "user" | "assistant";
@@ -31,32 +34,29 @@ export function AdminDashboardChat() {
   const [phase, setPhase] = useState<string | null>(null);
   const [phaseLog, setPhaseLog] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [hasError, setHasError] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, phase, phaseLog]);
+  }, [messages, phase, phaseLog, hasError]);
 
-  async function send(e: FormEvent) {
-    e.preventDefault();
-    const text = input.trim();
-    if (!text || loading) return;
-
-    const newMessages: Msg[] = [...messages, { role: "user", content: text }];
-    setMessages(newMessages);
-    setInput("");
+  // Núcleo del request — recibe los mensajes a mandar y maneja el SSE.
+  async function callApi(messagesToSend: Msg[]) {
     setLoading(true);
     setPhase(null);
     setPhaseLog([]);
-    setError(null);
+    setHasError(false);
 
     try {
       const res = await fetch("/api/chat/admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: newMessages.map(({ role, content }) => ({ role, content })),
+          messages: messagesToSend.map(({ role, content }) => ({
+            role,
+            content,
+          })),
         }),
       });
 
@@ -137,7 +137,7 @@ export function AdminDashboardChat() {
       }
 
       setMessages([
-        ...newMessages,
+        ...messagesToSend,
         {
           role: "assistant",
           content: finalResponse ?? "No pude generar una respuesta.",
@@ -148,11 +148,29 @@ export function AdminDashboardChat() {
         },
       ]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error");
+      // El error técnico se loguea acá, no se muestra al usuario.
+      console.error("[admin-chat] request failed:", err);
+      setHasError(true);
     } finally {
       setLoading(false);
       setPhase(null);
     }
+  }
+
+  async function send(e: FormEvent) {
+    e.preventDefault();
+    const text = input.trim();
+    if (!text || loading) return;
+
+    const newMessages: Msg[] = [...messages, { role: "user", content: text }];
+    setMessages(newMessages);
+    setInput("");
+    callApi(newMessages);
+  }
+
+  function retry() {
+    if (loading) return;
+    callApi(messages);
   }
 
   function pickSuggestion(s: string) {
@@ -161,28 +179,28 @@ export function AdminDashboardChat() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] bg-white border rounded-lg overflow-hidden">
-      <header className="p-4 border-b bg-gray-50">
-        <h1 className="text-lg font-semibold">
+    <div className="flex flex-col w-full max-w-6xl mx-auto h-[calc(100vh-72px-48px)] sm:h-[calc(100vh-72px-80px)] bg-surface-secondary border border-soft rounded-lg overflow-hidden">
+      <header className="px-4 sm:px-6 py-5 border-b border-soft">
+        <h1 className="text-h3 text-text-primary">
           Dashboard — Consultas en lenguaje natural
         </h1>
-        <p className="text-xs text-gray-500 mt-1">
+        <p className="text-body text-text-secondary mt-1">
           Preguntá sobre los datos de analytics. El sistema genera SQL, la
           valida (solo SELECT, tablas permitidas, LIMIT), ejecuta y resume.
         </p>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 space-y-4">
         {messages.length === 0 && (
           <div className="space-y-3">
-            <p className="text-sm text-gray-500">Ejemplos de consultas:</p>
+            <p className="text-body text-text-tertiary">Ejemplos de consultas:</p>
             <div className="flex flex-wrap gap-2">
               {SUGGESTIONS.map((s) => (
                 <button
                   key={s}
                   type="button"
                   onClick={() => pickSuggestion(s)}
-                  className="text-xs px-3 py-1.5 rounded-full border border-gray-300 hover:bg-gray-100 text-gray-700"
+                  className="focus-glow h-8 px-3 rounded-full border border-medium text-btn text-text-tertiary hover:bg-surface-soft hover:text-text-primary transition-colors"
                 >
                   {s}
                 </button>
@@ -196,40 +214,34 @@ export function AdminDashboardChat() {
         ))}
 
         {loading && (
-          <div className="space-y-2">
+          <div className="space-y-3 pl-1 animate-fade-in">
             {phaseLog.map((p, i) => {
               const isLast = i === phaseLog.length - 1;
               return (
-                <div
-                  key={i}
-                  className={`flex items-center gap-2 text-sm ${
-                    isLast ? "text-gray-700" : "text-gray-400"
-                  }`}
-                >
-                  {isLast ? (
-                    <Spinner />
-                  ) : (
-                    <span className="h-4 w-4 flex items-center justify-center text-green-600">
-                      ✓
-                    </span>
-                  )}
-                  <span>{PHASE_LABELS[p] ?? p}</span>
+                <div key={i} className="flex items-center gap-3 text-btn">
+                  <PhaseDot active={isLast} />
+                  <span
+                    className={
+                      isLast ? "text-text-primary" : "text-text-tertiary"
+                    }
+                  >
+                    {PHASE_LABELS[p] ?? p}
+                  </span>
                 </div>
               );
             })}
           </div>
         )}
 
-        {error && (
-          <div className="text-red-600 text-sm p-3 bg-red-50 border border-red-200 rounded">
-            {error}
-          </div>
-        )}
+        {hasError && !loading && <ChatErrorBanner onRetry={retry} />}
 
         <div ref={scrollRef} />
       </div>
 
-      <form onSubmit={send} className="border-t p-4 flex gap-2 bg-white">
+      <form
+        onSubmit={send}
+        className="border-t border-soft px-4 sm:px-6 py-3 sm:py-4 flex gap-2"
+      >
         <input
           type="text"
           value={input}
@@ -241,7 +253,7 @@ export function AdminDashboardChat() {
         <button
           type="submit"
           disabled={loading || !input.trim()}
-          className="bg-black text-white px-4 py-2 rounded text-sm disabled:opacity-50"
+          className="btn-primary"
         >
           Consultar
         </button>
@@ -256,7 +268,7 @@ function MessageBubble({ message }: { message: Msg }) {
   if (isUser) {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-lg px-4 py-3 text-sm whitespace-pre-wrap leading-relaxed bg-black text-white">
+        <div className="max-w-[85%] rounded-lg px-4 py-3 text-body whitespace-pre-wrap leading-relaxed bg-brand-primary text-white animate-fade-in">
           {message.content}
         </div>
       </div>
@@ -267,24 +279,29 @@ function MessageBubble({ message }: { message: Msg }) {
   const hasError = Boolean(message.validationError);
 
   return (
-    <div className="flex justify-start">
+    <div className="flex justify-start animate-fade-in">
       <div className="max-w-[95%] w-full space-y-2">
+        <div className="flex items-center gap-2 pl-1">
+          <AIBadge label="Analyst" />
+        </div>
         <div
-          className={`rounded-lg px-4 py-3 text-sm whitespace-pre-wrap leading-relaxed ${
+          className={`rounded-lg px-4 py-3 text-body whitespace-pre-wrap leading-relaxed border ${
             hasError
-              ? "bg-amber-50 text-amber-900 border border-amber-200"
-              : "bg-gray-100 text-gray-900"
+              ? "bg-warning-bg/40 text-warning border-warning-border/40"
+              : "bg-surface-secondary text-text-primary border-soft"
           }`}
         >
           {message.content}
           {typeof message.rowCount === "number" && !hasError && (
-            <div className="text-xs text-gray-500 mt-2">
+            <div className="text-code-sm text-text-tertiary mt-2">
               {message.rowCount} fila{message.rowCount === 1 ? "" : "s"} devuelta
               {message.rowCount === 1 ? "" : "s"}
             </div>
           )}
         </div>
-        {hasSql && <SqlBlock sql={message.generatedSql!} reasoning={message.sqlReasoning} />}
+        {hasSql && (
+          <SqlBlock sql={message.generatedSql!} reasoning={message.sqlReasoning} />
+        )}
       </div>
     </div>
   );
@@ -296,21 +313,18 @@ function SqlBlock({ sql, reasoning }: { sql: string; reasoning?: string }) {
     <details
       open={open}
       onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
-      className="bg-gray-900 text-gray-100 rounded-lg text-xs overflow-hidden"
+      className="bg-surface-overlay border border-soft rounded-lg overflow-hidden"
     >
-      <summary className="px-3 py-2 cursor-pointer select-none font-mono text-[11px] text-gray-300 hover:bg-gray-800">
-        {open ? "▼" : "▶"} SQL generado
-        {reasoning ? ` — ${reasoning}` : ""}
+      <summary className="px-3 py-2 cursor-pointer select-none font-mono text-code-sm text-text-tertiary hover:bg-surface-secondary hover:text-text-primary transition-colors flex items-start gap-2">
+        <span className="text-text-tertiary mt-[1px]">{open ? "▼" : "▶"}</span>
+        <span className="flex-1">
+          SQL generado{reasoning ? ` — ${reasoning}` : ""}
+        </span>
       </summary>
-      <pre className="px-3 pb-3 overflow-x-auto whitespace-pre-wrap text-[11px] leading-relaxed">
+      <pre className="px-3 pb-3 pt-1 overflow-x-auto whitespace-pre-wrap font-mono text-code-sm leading-relaxed text-text-muted">
 {sql}
       </pre>
     </details>
   );
 }
 
-function Spinner() {
-  return (
-    <div className="h-4 w-4 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
-  );
-}

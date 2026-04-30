@@ -25,7 +25,7 @@ export function DeleteButton({ id }: { id: string }) {
     <button
       onClick={onClick}
       disabled={pending}
-      className="text-red-600 hover:underline text-sm disabled:opacity-50"
+      className="h-8 px-3 inline-flex items-center rounded-full bg-transparent text-btn font-normal text-danger hover:text-danger-hover hover:bg-danger-bg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
     >
       {pending ? "Eliminando..." : "Eliminar"}
     </button>

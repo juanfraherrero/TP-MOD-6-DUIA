@@ -9,60 +9,71 @@ export default async function ActivitiesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Actividades</h1>
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-h3 text-text-primary">Actividades</h1>
         <Link
           href="/admin/activities/new"
-          className="bg-black text-white px-4 py-2 rounded text-sm"
+          className="h-8 px-3 inline-flex items-center rounded-full bg-cta-bg text-text-on-cta text-btn font-medium shadow-l2 hover:bg-cta-bg-hover transition-colors"
         >
           Nueva actividad
         </Link>
       </div>
 
       {activities.length === 0 ? (
-        <p className="text-gray-500">No hay actividades cargadas todavía.</p>
+        <p className="text-body text-text-tertiary">
+          No hay actividades cargadas todavía.
+        </p>
       ) : (
-        <table className="w-full border-collapse text-sm bg-white border rounded">
-          <thead>
-            <tr className="text-left border-b bg-gray-50">
-              <th className="py-2 px-3">Título</th>
-              <th className="py-2 px-3">Fechas</th>
-              <th className="py-2 px-3">Precio</th>
-              <th className="py-2 px-3">Estado</th>
-              <th className="py-2 px-3"></th>
-            </tr>
-          </thead>
-          <tbody>
+        <div className="card-dark overflow-hidden">
+          <div className="hidden md:grid grid-cols-[2fr_2fr_1fr_1fr_auto] gap-6 px-6 py-3 text-link text-text-tertiary border-b border-soft">
+            <div>Título</div>
+            <div>Fechas</div>
+            <div>Precio</div>
+            <div>Estado</div>
+            <div className="w-32" />
+          </div>
+          <ul>
             {activities.map((a) => (
-              <tr key={a.id} className="border-b last:border-b-0">
-                <td className="py-2 px-3">{a.title}</td>
-                <td className="py-2 px-3 text-gray-600">
+              <li
+                key={a.id}
+                className="grid grid-cols-1 md:grid-cols-[2fr_2fr_1fr_1fr_auto] gap-3 md:gap-6 items-center px-6 py-5 border-b border-soft last:border-b-0 hover:bg-surface-soft transition-colors"
+              >
+                <div className="text-body-span text-text-primary font-medium">
+                  {a.title}
+                </div>
+                <div className="text-body text-text-tertiary">
                   {new Date(a.startDate).toLocaleDateString("es-AR")} →{" "}
                   {new Date(a.endDate).toLocaleDateString("es-AR")}
-                </td>
-                <td className="py-2 px-3">
+                </div>
+                <div className="text-body text-text-primary">
                   ${Number(a.priceArs).toLocaleString("es-AR")}
-                </td>
-                <td className="py-2 px-3">
+                </div>
+                <div>
                   {a.isActive ? (
-                    <span className="text-green-700">Activa</span>
+                    <span className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full bg-brand-primary/15 text-brand-accent text-[12.25px] leading-[15.925px]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-brand-accent" />
+                      Activa
+                    </span>
                   ) : (
-                    <span className="text-gray-500">Inactiva</span>
+                    <span className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full bg-surface-soft text-text-tertiary text-[12.25px] leading-[15.925px]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-text-tertiary" />
+                      Inactiva
+                    </span>
                   )}
-                </td>
-                <td className="py-2 px-3 text-right space-x-3">
+                </div>
+                <div className="flex items-center justify-end gap-2 md:w-32">
                   <Link
                     href={`/admin/activities/${a.id}`}
-                    className="text-blue-600 hover:underline"
+                    className="h-8 px-3 inline-flex items-center rounded-full text-btn font-normal text-text-tertiary hover:text-text-muted transition-colors"
                   >
                     Editar
                   </Link>
                   <DeleteButton id={a.id} />
-                </td>
-              </tr>
+                </div>
+              </li>
             ))}
-          </tbody>
-        </table>
+          </ul>
+        </div>
       )}
     </div>
   );
