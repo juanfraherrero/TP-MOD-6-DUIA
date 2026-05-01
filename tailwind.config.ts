@@ -9,13 +9,14 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Constantes — no flipean por tema.
+        // Brand — verde institucional (constante, no flipea por tema)
         brand: {
-          primary: "#5E6AD2",
-          accent: "#828FFF",
+          primary: rgbVar("--brand-primary"),
+          accent: rgbVar("--brand-accent"),
+          deep: rgbVar("--brand-deep"),
         },
 
-        // Theme-aware (rgb tripletas en CSS vars; soportan modificador /X).
+        // Solid theme-aware
         surface: {
           primary: rgbVar("--surface-primary"),
           secondary: rgbVar("--surface-secondary"),
@@ -41,7 +42,7 @@ const config: Config = {
         danger: {
           DEFAULT: rgbVar("--danger"),
           hover: rgbVar("--danger-hover"),
-          bg: "var(--danger-bg)",        // ya es rgba — sin /alpha modifier
+          bg: "var(--danger-bg)",
         },
         info: {
           bg: "var(--info-bg)",
@@ -49,22 +50,28 @@ const config: Config = {
         },
       },
 
-      // Bordes / backgrounds transparentes (rgba directo). Usar como
-      // border-soft, bg-surface-soft, etc. Sin modificador /X.
-      borderColor: {
-        soft: "var(--border-soft)",
-        medium: "var(--border-medium)",
-        strong: "var(--border-strong)",
-      },
+      // Glass tokens (rgba directo — sin /alpha modifier).
       backgroundColor: {
+        glass: "var(--glass-bg)",
+        "glass-strong": "var(--glass-bg-strong)",
+        "glass-hover": "var(--glass-bg-hover)",
         input: "var(--bg-input)",
         "surface-soft": "var(--bg-surface-soft)",
         "modal-backdrop": "var(--bg-modal-backdrop)",
+      },
+      borderColor: {
+        glass: "var(--glass-border)",
+        "glass-strong": "var(--glass-border-strong)",
+        soft: "var(--border-soft)",
+        medium: "var(--border-medium)",
+        strong: "var(--border-strong)",
       },
       boxShadow: {
         l1: "var(--shadow-l1)",
         l2: "var(--shadow-l2)",
         input: "var(--shadow-input)",
+        glass: "var(--shadow-glass)",
+        "glass-sm": "var(--shadow-glass-sm)",
       },
 
       fontFamily: {
@@ -86,13 +93,16 @@ const config: Config = {
         ],
       },
       fontSize: {
-        "display-1": ["64px", { lineHeight: "64px", fontWeight: "510" }],
-        "display-2": ["48px", { lineHeight: "48px", fontWeight: "510" }],
+        hero: ["44px", { lineHeight: "52px", fontWeight: "600", letterSpacing: "-0.02em" }],
+        "display-1": ["64px", { lineHeight: "64px", fontWeight: "600", letterSpacing: "-0.02em" }],
+        "display-2": ["48px", { lineHeight: "56px", fontWeight: "590", letterSpacing: "-0.01em" }],
         h3: ["20px", { lineHeight: "26.6px", fontWeight: "590" }],
         h4: ["16px", { lineHeight: "24px", fontWeight: "590" }],
         body: ["15px", { lineHeight: "24px", fontWeight: "400" }],
         "body-span": ["16px", { lineHeight: "24px", fontWeight: "400" }],
+        eyebrow: ["11px", { lineHeight: "14px", fontWeight: "510", letterSpacing: "0.12em" }],
         link: ["14px", { lineHeight: "21px", fontWeight: "510" }],
+        button: ["13px", { lineHeight: "19.5px", fontWeight: "510" }],
         btn: ["13px", { lineHeight: "19.5px", fontWeight: "400" }],
         code: ["14px", { lineHeight: "24px", fontWeight: "400" }],
         "code-sm": ["12.25px", { lineHeight: "15.925px", fontWeight: "400" }],
@@ -101,11 +111,15 @@ const config: Config = {
         normal: "400",
         medium: "510",
         semibold: "590",
+        bold: "600",
       },
       borderRadius: {
         sm: "4px",
         md: "6px",
         lg: "8px",
+        xl: "12px",
+        "2xl": "16px",
+        "3xl": "20px",
         full: "9999px",
       },
       spacing: {
@@ -116,6 +130,7 @@ const config: Config = {
       maxWidth: {
         container: "1440px",
         card: "328px",
+        hero: "720px",
       },
       keyframes: {
         blink: {

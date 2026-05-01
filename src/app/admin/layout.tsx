@@ -1,4 +1,6 @@
+import Image from "next/image";
 import Link from "next/link";
+import { AdminNav } from "@/components/ui/AdminNav";
 
 export default function AdminLayout({
   children,
@@ -6,32 +8,33 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-surface-primary text-text-primary dot-grid">
-      <header className="h-18 px-4 sm:px-6 flex items-center bg-transparent shadow-l1">
-        <div className="w-full max-w-container mx-auto flex items-center gap-4 sm:gap-8">
+    <div className="min-h-screen bg-surface-primary text-text-primary">
+      <header className="sticky top-0 z-30 bg-surface-primary/85 backdrop-blur-md border-b border-soft">
+        <div className="w-full max-w-container mx-auto h-18 px-4 sm:px-6 flex items-center gap-6 sm:gap-10">
           <Link
             href="/admin/activities"
-            className="text-body-span font-medium text-text-primary hover:text-text-muted transition-colors"
+            className="flex items-center gap-3 shrink-0"
           >
-            Admin
+            <Image
+              src="/images/icon-2.png"
+              alt="La Rioja"
+              width={120}
+              height={32}
+              className="h-7 w-auto"
+              priority
+            />
+            <span className="hidden sm:inline-block h-5 w-px bg-border-medium" />
+            <span className="hidden sm:inline text-link text-text-secondary">
+              Admin
+            </span>
           </Link>
-          <nav className="flex items-center gap-1">
-            <Link
-              href="/admin/activities"
-              className="h-8 px-2 inline-flex items-center rounded-md text-link text-text-primary hover:bg-surface-soft hover:text-text-muted transition-colors"
-            >
-              Actividades
-            </Link>
-            <Link
-              href="/admin/dashboard"
-              className="h-8 px-2 inline-flex items-center rounded-md text-link text-text-primary hover:bg-surface-soft hover:text-text-muted transition-colors"
-            >
-              Dashboard
-            </Link>
-          </nav>
+          <AdminNav />
         </div>
+        <div className="h-[2px] bg-gradient-to-r from-transparent via-brand-primary/40 to-transparent" />
       </header>
-      <main className="max-w-container mx-auto px-4 sm:px-6 py-6 sm:py-10">{children}</main>
+      <main className="max-w-container mx-auto px-4 sm:px-6 py-8 sm:py-12">
+        {children}
+      </main>
     </div>
   );
 }

@@ -1,0 +1,308 @@
+{
+  "clasificaciones": {
+    "210": {
+      "id": 210,
+      "name": "Aventura y Naturaleza",
+      "slug": "aventura-y-naturaleza",
+      "count": 50
+    },
+    "211": {
+      "id": 211,
+      "name": "Turismo Cultural",
+      "slug": "turismo-cultural",
+      "count": 29
+    },
+    "212": {
+      "id": 212,
+      "name": "Turismo Rural",
+      "slug": "turismo-rural",
+      "count": 23
+    },
+    "213": {
+      "id": 213,
+      "name": "Ruta del Vino Riojano",
+      "slug": "ruta-del-vino-riojano",
+      "count": 22
+    },
+    "214": {
+      "id": 214,
+      "name": "Aladelta",
+      "slug": "aladelta",
+      "count": 1
+    },
+    "215": {
+      "id": 215,
+      "name": "Astroturismo",
+      "slug": "astroturismo",
+      "count": 10
+    },
+    "216": {
+      "id": 216,
+      "name": "Avistaje de aves",
+      "slug": "avistaje-de-aves",
+      "count": 10
+    },
+    "217": {
+      "id": 217,
+      "name": "Cabalgatas",
+      "slug": "cabalgatas",
+      "count": 12
+    },
+    "218": {
+      "id": 218,
+      "name": "Campamentismo",
+      "slug": "campamentismo",
+      "count": 8
+    },
+    "219": {
+      "id": 219,
+      "name": "Carrovelismo",
+      "slug": "carrovelismo",
+      "count": 2
+    },
+    "220": {
+      "id": 220,
+      "name": "Cicloturismo",
+      "slug": "cicloturismo",
+      "count": 16
+    },
+    "221": {
+      "id": 221,
+      "name": "Excursiones Nocturnas",
+      "slug": "excursiones-nocturnas",
+      "count": 10
+    },
+    "222": {
+      "id": 222,
+      "name": "Kayak",
+      "slug": "kayak",
+      "count": 6
+    },
+    "223": {
+      "id": 223,
+      "name": "Montañismo",
+      "slug": "montanismo",
+      "count": 13
+    },
+    "224": {
+      "id": 224,
+      "name": "Parapentes",
+      "slug": "parapentes",
+      "count": 3
+    },
+    "225": {
+      "id": 225,
+      "name": "Parques y reservas",
+      "slug": "parques-y-reservas",
+      "count": 36
+    },
+    "226": {
+      "id": 226,
+      "name": "Senderismo",
+      "slug": "senderismo",
+      "count": 42
+    },
+    "227": {
+      "id": 227,
+      "name": "Senderos y Cascadas",
+      "slug": "senderos-y-cascadas",
+      "count": 13
+    },
+    "228": {
+      "id": 228,
+      "name": "Ruta Escénica",
+      "slug": "ruta-escenica",
+      "count": 14
+    },
+    "229": {
+      "id": 229,
+      "name": "Termalismo",
+      "slug": "termalismo",
+      "count": 3
+    },
+    "230": {
+      "id": 230,
+      "name": "Travesía Todoterreno",
+      "slug": "travesia-todoterreno",
+      "count": 20
+    },
+    "231": {
+      "id": 231,
+      "name": "Trekking",
+      "slug": "trekking",
+      "count": 38
+    },
+    "232": {
+      "id": 232,
+      "name": "Iglesias y Capillas",
+      "slug": "iglesias-y-capillas",
+      "count": 16
+    },
+    "233": {
+      "id": 233,
+      "name": "Museos y paseos",
+      "slug": "museos",
+      "count": 41
+    },
+    "234": {
+      "id": 234,
+      "name": "Paseos",
+      "slug": "paseos",
+      "count": 50
+    },
+    "235": {
+      "id": 235,
+      "name": "Artesanías",
+      "slug": "artesanias",
+      "count": 9
+    },
+    "236": {
+      "id": 236,
+      "name": "Fiestas y Celebraciones",
+      "slug": "fiestas-y-celebraciones",
+      "count": 5
+    },
+    "278": {
+      "id": 278,
+      "name": "Bodegas",
+      "slug": "bodegas",
+      "count": 23
+    }
+  },
+  "departamentos": {
+    "156": {
+      "id": 156,
+      "name": "Gral. Felipe Varela | Villa Unión",
+      "slug": "gral-felipe-varela",
+      "count": 119
+    },
+    "157": {
+      "id": 157,
+      "name": "Arauco | Aimogasta",
+      "slug": "arauco",
+      "count": 37
+    },
+    "158": {
+      "id": 158,
+      "name": "Castro Barros | Aminga",
+      "slug": "castro-barros",
+      "count": 48
+    },
+    "159": {
+      "id": 159,
+      "name": "Chamical",
+      "slug": "chamical",
+      "count": 29
+    },
+    "160": {
+      "id": 160,
+      "name": "Chilecito",
+      "slug": "chilecito",
+      "count": 167
+    },
+    "161": {
+      "id": 161,
+      "name": "La Rioja Capital",
+      "slug": "larioja-capital",
+      "count": 412
+    },
+    "162": {
+      "id": 162,
+      "name": "Famatina",
+      "slug": "famatina",
+      "count": 45
+    },
+    "163": {
+      "id": 163,
+      "name": "Gral. Ángel V. Peñaloza | Tama",
+      "slug": "angel-vicente-penaloza",
+      "count": 8
+    },
+    "164": {
+      "id": 164,
+      "name": "Gral. Belgrano | Olta",
+      "slug": "gral-belgrano",
+      "count": 25
+    },
+    "165": {
+      "id": 165,
+      "name": "Gral. Juan Facundo Quiroga | Malanzán",
+      "slug": "gral-juan-facundo-quiroga",
+      "count": 13
+    },
+    "166": {
+      "id": 166,
+      "name": "Gral. Lamadrid | Villa Castelli",
+      "slug": "gral-lamadrid",
+      "count": 13
+    },
+    "167": {
+      "id": 167,
+      "name": "Gral. Ortiz de Ocampo | Catuna",
+      "slug": "gral-ocampo",
+      "count": 14
+    },
+    "168": {
+      "id": 168,
+      "name": "Gral. San Martín | Ulapes",
+      "slug": "gral-san-martin",
+      "count": 15
+    },
+    "169": {
+      "id": 169,
+      "name": "Independencia | Patquía",
+      "slug": "independencia",
+      "count": 13
+    },
+    "170": {
+      "id": 170,
+      "name": "Rosario V. Peñaloza | Chepes",
+      "slug": "rosario-v-penaloza",
+      "count": 27
+    },
+    "171": {
+      "id": 171,
+      "name": "San Blas de Los Sauces",
+      "slug": "san-blas-de-los-sauces",
+      "count": 19
+    },
+    "172": {
+      "id": 172,
+      "name": "Sanagasta",
+      "slug": "sanagasta",
+      "count": 41
+    },
+    "173": {
+      "id": 173,
+      "name": "Vinchina",
+      "slug": "vinchina",
+      "count": 27
+    }
+  },
+  "region": {
+    "99": {
+      "id": 99,
+      "name": "Región Llanos",
+      "slug": "region-llanos",
+      "count": 4
+    },
+    "100": {
+      "id": 100,
+      "name": "Región Norte",
+      "slug": "region-norte",
+      "count": 19
+    },
+    "101": {
+      "id": 101,
+      "name": "Región Oeste",
+      "slug": "region-oeste",
+      "count": 36
+    },
+    "297": {
+      "id": 297,
+      "name": "Castro Barros",
+      "slug": "castro-barros",
+      "count": 0
+    }
+  }
+}

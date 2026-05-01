@@ -1,7 +1,6 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { ThemeProvider, NO_FLASH_SCRIPT } from "@/components/ui/ThemeProvider";
-import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 export const metadata: Metadata = {
   title: "Agencia de Turismo",
@@ -27,10 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH_SCRIPT }} />
       </head>
       <body className="min-h-screen bg-surface-primary text-text-primary antialiased">
-        <ThemeProvider>
-          {children}
-          <ThemeToggle />
-        </ThemeProvider>
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );

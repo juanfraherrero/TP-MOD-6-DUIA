@@ -9,16 +9,19 @@ import type { MatchQuality } from "./state";
 // 0. input_guard
 // ---------------------------------------------------------------------------
 
-export const INPUT_GUARD_SYSTEM = `Clasificás si un mensaje enviado a una agencia de turismo aventura argentina está dentro del scope.
+export const INPUT_GUARD_SYSTEM = `Clasificás si un mensaje enviado a una agencia de turismo está dentro del scope.
+
+La agencia ofrece **actividades turísticas y de aventura en La Rioja, Argentina** — y SOLO en La Rioja. Su catálogo cubre los 18 departamentos provinciales: Capital, Arauco, Castro Barros, Chamical, Chilecito, Coronel Felipe Varela, Famatina, General Ángel V. Peñaloza, General Belgrano, General Juan Facundo Quiroga, General Lamadrid, General Ortiz de Ocampo, General San Martín, Independencia, Rosario Vera Peñaloza, San Blas de Los Sauces, Sanagasta, Vinchina.
 
 DENTRO del scope (inScope=true):
-- Preguntas / búsquedas de actividades de turismo aventura: trekking, escalada, cabalgatas, rafting, mountain bike, kayak, parapente, etc.
-- Consultas sobre lugares turísticos (AR y Sudamérica).
-- Preguntas sobre dificultad, altitud, clima, preparación física.
+- Preguntas / búsquedas de actividades turísticas y de aventura en **La Rioja, Argentina**: trekking, bodegas y ruta del vino, cabalgatas, astroturismo, paseos, escalada, mountain bike, termas, etc.
+- Consultas sobre departamentos, ciudades, sierras y lugares turísticos de La Rioja (Chilecito, Famatina, Capital, Sanagasta, Cuesta de Miranda, Talampaya, etc.).
+- Preguntas sobre dificultad, altitud, clima, paisaje o preparación física referidas a La Rioja.
 - Refinamientos de búsquedas previas ("más barato", "para mi abuela", "en primavera").
 - Saludos simples y cortos.
 
 FUERA del scope (inScope=false):
+- Destinos turísticos fuera de La Rioja (Bariloche, Mendoza, Cataratas del Iguazú, Salta, Mar del Plata, El Chaltén, Patagonia, Cusco, etc.). NO tenemos catálogo para esos lugares; aunque la pregunta sea turística, va FUERA.
 - Programación, código, instrucciones técnicas.
 - Política, religión, opiniones personales.
 - Drogas, sustancias ilegales, alcohol, violencia.
@@ -26,15 +29,27 @@ FUERA del scope (inScope=false):
 - Vuelos, hoteles, restaurantes (no somos ese tipo de agencia).
 - Recetas, chistes, roleplay, temas personales, cualquier otro dominio.
 
-Ante duda razonable (mensajes ambiguos pero plausiblemente turísticos) → inScope=true (preferimos el falso positivo antes que rechazar al usuario).
+Ante duda razonable (mensajes ambiguos pero plausiblemente sobre turismo en La Rioja, o sin lugar mencionado) → inScope=true (preferimos el falso positivo antes que rechazar al usuario).
 
 Ante duda CON señales de contenido problemático (drogas, violencia, etc.) → inScope=false siempre.
 
 EJEMPLOS:
 
-Input: "Busco trekking en El Chaltén para noviembre, nivel medio"
+Input: "Busco trekking en Famatina para noviembre, nivel medio"
 Output:
-{"inScope": true, "category": "tourism_adventure", "reason": "Búsqueda directa de actividad de trekking en destino turístico."}
+{"inScope": true, "category": "tourism_adventure", "reason": "Búsqueda directa de actividad de trekking en un departamento de La Rioja."}
+
+Input: "qué bodegas hay en Chilecito"
+Output:
+{"inScope": true, "category": "tourism_adventure", "reason": "Consulta sobre actividades enológicas en un departamento de La Rioja."}
+
+Input: "trekking en Bariloche"
+Output:
+{"inScope": false, "category": "off_topic_benign", "reason": "Bariloche está fuera de La Rioja — no tenemos catálogo para ese destino."}
+
+Input: "qué hago en Mendoza el finde"
+Output:
+{"inScope": false, "category": "off_topic_benign", "reason": "Mendoza está fuera de La Rioja — no tenemos catálogo para ese destino."}
 
 Input: "¿Me das una receta de milanesa a la napolitana?"
 Output:
@@ -64,8 +79,12 @@ Reglas:
 - filters.targetDate: SOLO si el usuario menciona un día específico o puntual (ej: "el sábado 22 de noviembre", "el 15 de diciembre", "el próximo domingo"). Formato ISO YYYY-MM-DD.
 - filters.dateRangeStart + filters.dateRangeEnd: SOLO si el usuario menciona un rango o semana (ej: "la semana del 20 al 26 de diciembre", "entre el 1 y el 15 de diciembre", "el próximo fin de semana" → sábado y domingo). Ambos en ISO YYYY-MM-DD.
 - NUNCA combines targetDate con el par dateRangeStart/dateRangeEnd en el mismo output.
-- placeNames: lugares mencionados. No inventes lugares si no los mencionó.
+- filters.minAltitudeM / filters.maxAltitudeM: SOLO si el usuario menciona NÚMEROS EXPLÍCITOS de altitud en metros ("sobre 4000 metros" → minAltitudeM: 4000; "menos de 1000m" → maxAltitudeM: 1000; "entre 2000 y 3500" → min 2000, max 3500). Frases CUALITATIVAS sin número ("alta montaña", "altitud baja", "muy alto") NO van acá — el matching cualitativo lo hace el embedding.
+- filters.minElevationGainM / filters.maxElevationGainM: SOLO si menciona NÚMEROS EXPLÍCITOS de desnivel en metros ("desnivel hasta 500m" → maxElevationGainM: 500; "más de 800m de desnivel" → minElevationGainM: 800). Frases CUALITATIVAS ("muy exigente", "suave") NO van acá.
+- placeNames: lugares genéricos mencionados (no estrictamente departamentos: "Sierra de la Ventana", "El Chaltén", "Cataratas"). No inventes lugares si no los mencionó.
 - isOnlyPlace: true SOLO si el mensaje es prácticamente un nombre de lugar ("Sierra de la Ventana", "El Chaltén") sin más contexto de qué quiere hacer.
+- mentionedPlaces: SUBCONJUNTO de placeNames que coincide con departamentos o ciudades de La Rioja Argentina (Chilecito, Famatina, Capital, Vinchina, Sanagasta, Aimogasta, Villa Unión, Anillaco, etc.). Si el usuario nombra una ciudad/depto riojano, va acá. Lista vacía si no nombra ninguno.
+- mentionedCategories: categorías temáticas turísticas que nombre el usuario, en lower-case y singular cuando aplique (bodegas, vinos, trekking, astroturismo, cabalgatas, paseos, aventura, naturaleza, montaña, termas, ruta del vino, etc.). Lista vacía si no nombra ninguna.
 
 Para expresiones relativas usá el CONTEXTO TEMPORAL de arriba como anclaje. Calculá la fecha ISO exacta contando días desde hoy. Si hay duda razonable entre targetDate y rango, preferí rango.
 
@@ -73,46 +92,71 @@ EJEMPLOS:
 
 Input: "Quiero hacer trekking en montaña hasta 80 mil pesos, entre el 1 y el 15 de diciembre"
 Output:
-{"semanticQuery": "trekking en paisaje de montaña", "filters": {"maxPriceArs": 80000, "dateRangeStart": "2026-12-01", "dateRangeEnd": "2026-12-15"}, "placeNames": [], "isOnlyPlace": false}
+{"semanticQuery": "trekking en paisaje de montaña", "filters": {"maxPriceArs": 80000, "dateRangeStart": "2026-12-01", "dateRangeEnd": "2026-12-15"}, "placeNames": [], "isOnlyPlace": false, "mentionedPlaces": [], "mentionedCategories": ["trekking", "montaña"]}
 
 Input: "¿Qué puedo hacer el sábado 22 de noviembre?"
 Output:
-{"semanticQuery": "actividades turismo aventura", "filters": {"targetDate": "2026-11-22"}, "placeNames": [], "isOnlyPlace": false}
+{"semanticQuery": "actividades turismo aventura", "filters": {"targetDate": "2026-11-22"}, "placeNames": [], "isOnlyPlace": false, "mentionedPlaces": [], "mentionedCategories": []}
 
 Input: "Trekking el sábado 22 de noviembre"
 Output:
-{"semanticQuery": "trekking", "filters": {"targetDate": "2026-11-22"}, "placeNames": [], "isOnlyPlace": false}
+{"semanticQuery": "trekking", "filters": {"targetDate": "2026-11-22"}, "placeNames": [], "isOnlyPlace": false, "mentionedPlaces": [], "mentionedCategories": ["trekking"]}
 
 Input: "Algo para la semana del 20 al 26 de diciembre"
 Output:
-{"semanticQuery": "actividades turismo aventura", "filters": {"dateRangeStart": "2026-12-20", "dateRangeEnd": "2026-12-26"}, "placeNames": [], "isOnlyPlace": false}
+{"semanticQuery": "actividades turismo aventura", "filters": {"dateRangeStart": "2026-12-20", "dateRangeEnd": "2026-12-26"}, "placeNames": [], "isOnlyPlace": false, "mentionedPlaces": [], "mentionedCategories": []}
+
+Input: "qué bodegas hay en Chilecito"
+Output:
+{"semanticQuery": "visitas a bodegas en Chilecito con degustación de vinos", "filters": {}, "placeNames": ["Chilecito"], "isOnlyPlace": false, "mentionedPlaces": ["Chilecito"], "mentionedCategories": ["bodegas"]}
+
+Input: "algo de astroturismo en Famatina"
+Output:
+{"semanticQuery": "astroturismo y observación astronómica en Famatina", "filters": {}, "placeNames": ["Famatina"], "isOnlyPlace": false, "mentionedPlaces": ["Famatina"], "mentionedCategories": ["astroturismo"]}
+
+Input: "cabalgatas y paseos en la naturaleza"
+Output:
+{"semanticQuery": "cabalgatas y paseos en entornos naturales", "filters": {}, "placeNames": [], "isOnlyPlace": false, "mentionedPlaces": [], "mentionedCategories": ["cabalgatas", "paseos", "naturaleza"]}
+
+Input: "actividades sobre 4000 metros"
+Output:
+{"semanticQuery": "actividades de turismo aventura en altitud", "filters": {"minAltitudeM": 4000}, "placeNames": [], "isOnlyPlace": false, "mentionedPlaces": [], "mentionedCategories": []}
+
+Input: "trekking con desnivel hasta 500m"
+Output:
+{"semanticQuery": "trekking con desnivel moderado", "filters": {"maxElevationGainM": 500}, "placeNames": [], "isOnlyPlace": false, "mentionedPlaces": [], "mentionedCategories": ["trekking"]}
+
+Input: "algo de alta montaña pero exigente"
+Razonamiento: NO hay números explícitos — solo descripciones cualitativas. NO seteamos filtros de altitud/desnivel; el embedding ya matchea contra los audienceTags ("alta montaña", "exigente").
+Output:
+{"semanticQuery": "actividad exigente en alta montaña", "filters": {}, "placeNames": [], "isOnlyPlace": false, "mentionedPlaces": [], "mentionedCategories": ["montaña"]}
 
 EJEMPLO DE RESOLUCIÓN DE FECHA RELATIVA — si hoy fuera jueves 2026-04-23:
 
 Input: "Kayak el próximo fin de semana"
 Razonamiento interno: hoy jueves 23 → próximo sábado = 25 → próximo domingo = 26.
 Output:
-{"semanticQuery": "kayak", "filters": {"dateRangeStart": "2026-04-25", "dateRangeEnd": "2026-04-26"}, "placeNames": [], "isOnlyPlace": false}
+{"semanticQuery": "kayak", "filters": {"dateRangeStart": "2026-04-25", "dateRangeEnd": "2026-04-26"}, "placeNames": [], "isOnlyPlace": false, "mentionedPlaces": [], "mentionedCategories": ["kayak"]}
 
 Input: "algo para mañana"
 Razonamiento: hoy jueves 23 → mañana = viernes 24.
 Output:
-{"semanticQuery": "actividades turismo aventura", "filters": {"targetDate": "2026-04-24"}, "placeNames": [], "isOnlyPlace": false}
+{"semanticQuery": "actividades turismo aventura", "filters": {"targetDate": "2026-04-24"}, "placeNames": [], "isOnlyPlace": false, "mentionedPlaces": [], "mentionedCategories": []}
 
 Input: "trekking en dos semanas"
 Razonamiento: hoy jueves 23 → +14 días = jueves 2026-05-07. Asumimos una semana entera desde esa fecha.
 Output:
-{"semanticQuery": "trekking", "filters": {"dateRangeStart": "2026-05-07", "dateRangeEnd": "2026-05-13"}, "placeNames": [], "isOnlyPlace": false}
+{"semanticQuery": "trekking", "filters": {"dateRangeStart": "2026-05-07", "dateRangeEnd": "2026-05-13"}, "placeNames": [], "isOnlyPlace": false, "mentionedPlaces": [], "mentionedCategories": ["trekking"]}
 
 (IMPORTANTE: en los ejemplos de arriba las fechas son ilustrativas; usá el CONTEXTO TEMPORAL real de arriba del prompt para resolver.)
 
 Input: "El Chaltén"
 Output:
-{"semanticQuery": "actividades turismo aventura en El Chaltén", "filters": {}, "placeNames": ["El Chaltén"], "isOnlyPlace": true}
+{"semanticQuery": "actividades turismo aventura en El Chaltén", "filters": {}, "placeNames": ["El Chaltén"], "isOnlyPlace": true, "mentionedPlaces": [], "mentionedCategories": []}
 
 Input: "algo más barato que lo anterior, para mi vieja que no tiene experiencia"
 Output:
-{"semanticQuery": "actividad accesible para principiantes sin experiencia, tranquila, económica", "filters": {}, "placeNames": [], "isOnlyPlace": false}
+{"semanticQuery": "actividad accesible para principiantes sin experiencia, tranquila, económica", "filters": {}, "placeNames": [], "isOnlyPlace": false, "mentionedPlaces": [], "mentionedCategories": []}
 
 FORMATO: tenés una tool disponible — invocala como respuesta. No expliques, no des markdown, no uses texto plano. Solo la tool call con los parámetros correctos.`;
 }
@@ -140,6 +184,8 @@ Reglas:
 - Si el query menciona nivel vago → traducir a dificultad concreta (ej: "tranqui" → "dificultad baja, sin esfuerzo físico exigente").
 - Si el query ya es técnico (ej: "trekking exigente con desnivel"), agregá poco — el rewrite debería notarse mínimo.
 - NUNCA inventes lugares, fechas, precios.
+- Si el user prompt incluye PISTAS DEL CATÁLOGO (departamentos / categorías mencionados), incluí esos términos LITERALES en el enrichedQuery. El catálogo embebió "Categorías: bodegas" y "Departamento: Chilecito" en el texto de cada actividad — repitiéndolos acá maximizás el match semántico. NO los conviertas a filtros estructurados.
+- Si el user prompt incluye un bloque INFO WEB (resumen + snippets de fuentes), usalo para sumar vocabulario REAL al enrichedQuery: nombres propios, datos físicos, términos del lugar. **Priorizá los snippets sobre el resumen** — los snippets suelen tener los datos concretos (nombres de cerros, alturas, dificultad, época), mientras el resumen es más genérico. NUNCA inventes datos que no estén en el bloque; si la web no aclara, no pongas el dato.
 
 EJEMPLOS:
 
@@ -162,6 +208,11 @@ Output:
 Input: "vamos con bebé y mi nieta de 4"
 Output:
 {"enrichedQuery": "actividad apta para familias con niños pequeños y bebés, dificultad muy baja, sin desnivel, altitud baja, paseo tranquilo y corto, sin riesgo, ritmo calmo.", "rewriteApplied": true, "reasoning": "Demografía → perfil familiar + restricciones físicas para chicos pequeños."}
+
+Input: "visitas a bodegas en Chilecito con degustación de vinos"
+PISTAS DEL CATÁLOGO: Departamentos/lugares mencionados: Chilecito. Categorías mencionadas: bodegas.
+Output:
+{"enrichedQuery": "bodegas en Chilecito, visitas guiadas con degustación de vinos torrontés, ruta del vino riojano, paseo cultural enológico, departamento de Chilecito, La Rioja Argentina.", "rewriteApplied": true, "reasoning": "Reforcé bodegas + Chilecito (matchean contra Categorías y Departamento embeddeados) y agregué vocabulario enológico."}
 
 FORMATO: tenés una tool disponible — invocala como respuesta. No expliques, no des markdown, no uses texto plano. Solo la tool call con los parámetros correctos.`;
 
@@ -220,7 +271,7 @@ Reglas:
 - NO inventes datos — usá solo lo que está en la descripción de cada actividad.
 - Devolvé UNA propuesta por cada candidato recibido, en el mismo orden.
 - No repitas el precio en el pitch (la UI ya lo muestra aparte).
-- Pitches de 2-3 líneas, concretos, sin relleno.
+- LARGO DEL PITCH (regla EXPLÍCITA, no negociable): cada \`pitch\` debe tener EXACTAMENTE entre 200 y 320 caracteres (2-3 líneas naturales). NUNCA menos de 150 ni más de 400 caracteres. Si te queda corto, expandilo con un detalle extra de la descripción (paisaje, nivel, equipo). Si te queda largo, abrevialo. SIEMPRE quedás en el rango 200-320.
 
 EJEMPLOS:
 
@@ -228,17 +279,22 @@ Ejemplo 1 — matchQuality=STRONG, 3 candidatos:
 Output:
 {"introMessage": "Buenísimo, te armé tres propuestas que pegan justo con lo que buscás:",
  "proposals": [
-   {"id": "uuid-1", "pitch": "Trekking de dos días por senderos rocosos con vistas al glaciar, dificultad media. Grupo chico, guía experimentado."},
-   {"id": "uuid-2", "pitch": "Recorrido de montaña clásico, tres noches de campamento con paisajes de alta cumbre. Ideal si ya caminaste en montaña antes."},
-   {"id": "uuid-3", "pitch": "Variante más corta con base en refugio — buena mezcla de trekking y descanso al atardecer."}
+   {"id": "uuid-1", "pitch": "Trekking de dos días por senderos rocosos con vistas al glaciar, dificultad media. Grupo chico, guía experimentado y campamento al pie del cerro. Ideal si querés combinar caminata exigente con paisaje de alta montaña sin necesitar experiencia técnica."},
+   {"id": "uuid-2", "pitch": "Recorrido de montaña clásico, tres noches de campamento con paisajes de alta cumbre. Ideal si ya caminaste en montaña antes. El ritmo es sostenido pero el grupo se adapta — guía bilingüe y equipo provisto, vos solo llevás mochila y ganas."},
+   {"id": "uuid-3", "pitch": "Variante más corta con base en refugio: dos días, una noche techada y comidas incluidas. Buena mezcla de trekking y descanso al atardecer, perfecta si querés probar la modalidad sin comprometerte a varios días de carpa."}
  ]}
 (closingMessage omitido — STRONG no lo lleva)
+
+Pitch BIEN largo (272 chars, dentro del rango): "Trekking de dos días por senderos rocosos con vistas al glaciar, dificultad media. Grupo chico, guía experimentado y campamento al pie del cerro. Ideal si querés combinar caminata exigente con paisaje de alta montaña sin necesitar experiencia técnica previa."
+
+Pitch MAL (84 chars, demasiado corto — EVITAR): "Trekking lindo de dos días con vistas al glaciar, dificultad media."
+→ Esto está fuera de rango. Habría que expandir con paisaje, nivel del grupo, qué incluye, etc., hasta llegar a 200-320 chars.
 
 Ejemplo 2 — matchQuality=PARTIAL, 1 candidato:
 Output:
 {"introMessage": "Lo más parecido que tengo a lo que pedís es esto:",
  "proposals": [
-   {"id": "uuid-x", "pitch": "Cabalgata por la sierra con nivel inicial — no es exactamente trekking pero compartís el paisaje y la onda tranqui."}
+   {"id": "uuid-x", "pitch": "Cabalgata por la sierra con nivel inicial — no es exactamente trekking pero compartís el paisaje y la onda tranqui. Recorrido de medio día con guía baqueano, paradas para foto y mate al volver. Apto sin experiencia previa con caballos."}
  ],
  "closingMessage": "¿Querés que te muestre otras opciones aunque no calcen exacto con lo que buscabas?"}
 
@@ -284,6 +340,8 @@ FORMATO: respondé conciso y directo. Sin saludos, sin preámbulos, sin markdown
 // ---------------------------------------------------------------------------
 
 export const GUARDRAIL_CHECK_SYSTEM = `Sos un clasificador de scope BINARIO para una agencia de turismo aventura argentina.
+
+El asesor sólo cubre turismo en La Rioja, Argentina. Aun así, este guard NO es crítico de calidad — sólo de tema. Si la respuesta habla de turismo (aunque mencione un lugar fuera de La Rioja para comparar, contextualizar o derivar al usuario), inScope=true igual.
 
 Tu ÚNICA tarea es decidir si la respuesta del asesor pertenece al dominio "turismo / actividades / lugares turísticos" (inScope=true) o es de un dominio COMPLETAMENTE AJENO (inScope=false).
 

@@ -234,20 +234,43 @@ Al crear o actualizar una actividad desde el formulario admin:
 2. `createActivity` persiste la actividad en la tabla `activities`.
 3. Dispara `ingestActivity(id, data)` del módulo RAG.
 4. El pipeline:
-   - **Construye un texto etiquetado** concatenando los campos relevantes: Título, Descripción, Requisitos, Preparación física, Altitud, Desnivel. Esto da al embedding contexto estructural (`"Altitud máxima: 3000 metros"` se indexa distinto a `"3000"`).
+   - **Construye un texto etiquetado** concatenando los campos relevantes: Título, Descripción, Requisitos, Preparación física, Horario, Altitud, Desnivel, Públicos ideales, **Categorías** (nombres de las clasificaciones M:N), **Departamento** (nombres de los departamentos M:N) e **Imágenes** (captions limpias de la galería). Esto da al embedding contexto estructural (`"Altitud máxima: 3000 metros"` se indexa distinto a `"3000"`) y permite que las taxonomías influyan en el matching SIN agregar filtros WHERE — el embedding ya las pondera porque viven dentro del texto chunkeado. Los campos de texto pasan por `stripHtml()` antes de embeddear (el admin a veces pega contenido de editores ricos con `<p>` / `&nbsp;` que sería ruido para el modelo); los crudos se conservan en DB. Las captions se filtran con `looksLikeCleanCaption()` para descartar nombres de archivo del scraper (`WhatsApp Image…`, `IMG_1234`, solo símbolos).
    - **Chunkea** a 500 chars con 50 de overlap. Motivación: los modelos E5 tienen ventana efectiva de 512 tokens; 500 chars queda dentro. El overlap mitiga pérdida de contexto cuando una oración cruza el límite de chunk.
-   - **Embebe** cada chunk con prefijo `passage:` (convención E5 para documentos indexados).
-   - **Borra** los chunks previos del `activity_id` (idempotencia para updates — re-ingesta completa).
-   - **Inserta** los nuevos chunks en `activity_chunks` con su embedding como `vector(384)`.
+   - **Embebe** cada chunk con prefijo `passage:` (convención E5 para documentos indexados). El `embedDocument` se invoca via wrapper `embedDocumentWithRetry` (3 intentos, backoff exponencial 200ms → 400ms) para tolerar el cold start del modelo HF la primera vez que se descarga.
+   - **DELETE + INSERT envuelto en transacción** (`ds.transaction(...)`). Si cualquier embedding o INSERT falla, hace rollback y los chunks viejos quedan intactos. El error se propaga al caller (createActivity/updateActivity) para que la API responda 500 — no se traga silenciosamente. Esto cierra la ventana en la que un fallo a mitad de la ingesta dejaba la activity con 0 chunks (búsqueda RAG sin retorno).
+   - **Guard de dimensión del embedding** justo antes de cada INSERT: si `vec.length !== EMBEDDING_DIM` (384), aborta con error explícito y dispara el rollback de la transacción. Defensa contra drift del modelo de embeddings (cambio silencioso 384→768 sin migración del índice HNSW) — sin esta guarda, pgvector tiraría un error críptico de mismatch en el `::vector` cast y costaría diagnosticar.
+   - Al final loguea `ingest done` con `activityId`, `chunkCount`, `totalChars`, `embeddingDim` y `durationMs` para baseline de performance del pipeline.
+
+**Mejora — bins cualitativos derivados de altitud y desnivel**: además de los `audienceTags` que genera el LLM (perfil del público, condiciones físicas), el service computa `derivedTags` heurísticos a partir de `altitudeM` / `elevationGainM` mediante `lib/services/difficulty-tags.ts`. Estos bins son **agnósticos al tipo de actividad** (NO mencionan "trekking" / "bodega") y usan vocabulario genérico que aplica al embedding sin importar el formato de la experiencia:
+
+| Métrica | Bin | Tags |
+|---|---|---|
+| `altitudeM ≥ 4000` | muy alta | `alta montaña`, `muy alta altitud` |
+| `2500 ≤ altitudeM < 4000` | alta | `alta altitud` |
+| `1000 ≤ altitudeM < 2500` | media | `media altitud` |
+| `elevationGainM ≥ 1500` | muy exigente | `muy exigente`, `desnivel muy pronunciado` |
+| `800 ≤ elevationGainM < 1500` | exigente | `exigente`, `desnivel pronunciado` |
+| `300 ≤ elevationGainM < 800` | moderado | `desnivel moderado` |
+| `elevationGainM < 300` | suave | `recorrido suave` |
+
+Los `derivedTags` se mergean con los `llmTags` (dedupe case-insensitive) antes de persistir y se **siempre re-calculan** en update (no dependen del cambio de texto). Esto garantiza que un bump de altitud actualice los tags aunque el resto del texto siga igual. Los `audienceTags` finales viajan tanto al campo `audience_tags text[]` (queryable por SQL) como concatenados al texto que va al embedder, así una query como `"actividad muy exigente en alta montaña"` matchea por embedding aunque el LLM no haya escrito esas palabras textuales.
+
+**Trigger de re-generación LLM en update**: además de cambios en los campos de texto, se regenera el LLM call cuando cambian las taxonomías (`departmentIds` o `classificationIds`) — esas relaciones también dan señal al LLM (un trekking de Famatina hereda contexto distinto que uno de Vinchina). Si nada de eso cambió, se conservan los `llmTags` existentes; los `derivedTags` se recalculan por idempotencia.
+
+**Paginación del listado admin**: `listActivities({ page, pageSize })` retorna `{ items, total, page, pageSize, totalPages }` y usa `findAndCount` con `skip/take` para paginar a nivel SQL — el catálogo crece pero la página `/admin/activities` mantiene latencia constante. Default `pageSize=20` (cap defensivo a 100). El handler `GET /api/activities` acepta `?page=N&size=N` y devuelve el mismo shape paginado. La UI agrega un componente `<Pagination>` (contador "Página X de Y · Z actividades" + botones anterior/siguiente como `<Link>` que mutan `?page=`); en página 1 / última el botón correspondiente queda con `aria-disabled` y opacity reducida (sin link). Si `totalPages ≤ 1` no se renderiza.
 
 ### 5.2 Retrieval híbrido
 
 `retrieveActivities(query, topK, filters)` combina:
 
 - **Semántica (RAG)**: operador `<=>` de pgvector (distancia coseno) sobre la query embebida con prefijo `query:`.
-- **Estructural (SQL)**: filtros `WHERE a.price_ars <= ?`, `a.start_date >= ?`, `a.end_date <= ?`, `a.is_active = true`.
+- **Estructural (SQL)**: filtros `WHERE a.price_ars <= ?`, `a.is_active = true`, condiciones de availability (`= ANY(available_dates)` o `&& generate_series` para rangos), y los nuevos `a.altitude_m >= ?` / `a.altitude_m <= ?` / `a.elevation_gain_m >= ?` / `a.elevation_gain_m <= ?`.
+
+**Diferencia clave entre filtros numéricos y matching cualitativo**: los filtros de altitud / desnivel se aplican SOLO cuando el usuario menciona números explícitos en su mensaje ("sobre 4000 metros" → `minAltitudeM: 4000`; "desnivel hasta 500m" → `maxElevationGainM: 500`). Frases cualitativas como "alta montaña" o "muy exigente" NO se traducen a estos filtros — se resuelven vía embedding contra los `derivedTags` que ya viven en el texto chunkeado de cada actividad (ver §5.1). Esto evita el recall cliff: si un usuario dice "alta montaña" y el sistema lo tradujese a `minAltitudeM: 2500`, podría descartar actividades genuinamente acordes pero con `altitude_m` mal cargado o `null`.
 
 Se utiliza una CTE con `ROW_NUMBER() OVER (PARTITION BY activity_id ORDER BY distancia)` para deduplicar: cada actividad aparece una sola vez, representada por su chunk más cercano a la query. Esto evita que una actividad con 3 chunks muy similares acapare el top-K.
+
+**Hard distance threshold (`MAX_VECTOR_DISTANCE = 0.85`)**: el SQL aplica además `WHERE ranked.distance < 0.85` para descartar matches semánticamente lejanos antes de pasarlos al evaluator LLM. La distancia coseno de pgvector va de 0 (idéntico) a 2 (opuesto); 0.85 es el corte marginal-pobre — deja pasar matches mediocres que el evaluator aún puede rescatar pero filtra basura (preguntas que el `input_guard` dejó pasar pero no tienen catálogo asociado, p. ej. "actividades para nadar con tiburones"). Cuando el filtro vacía completamente el resultado, `retrieve` loguea `warn "0 hits tras MAX_VECTOR_DISTANCE filter"` con la query truncada, y el `evaluate_match` del agente cliente cortocircuita (early return con `evaluations: []`, `avgScore: 0`) ahorrando un LLM call innecesario; el grafo termina en `matchQuality="none"` y el fallback no-match emerge naturalmente.
 
 ### 5.3 Justificación académica de RAG + SQL híbrido
 
@@ -281,33 +304,34 @@ START
 [extract_intent]    ── LLM con structured output (Zod)
   │
   ▼
-[route: onlyPlace?]
-  ├─ sí ──▶ [web_enrich] ──▶ (merge a semanticQuery)
-  │                              │
-  └─ no ─────────────────────────┤
-                                 ▼
-                         [rag_retrieve]   (función del Módulo A)
-                                 │
-                                 ▼
-                         [evaluate_match]  ── LLM scorea cada candidato
-                                 │
-                                 ▼
-             [route: anyStrong OR goodAvg OR retries exhausted]
-                                 │
-                   ┌─────────────┼─────────────┐
-                   │ no                        │ sí
-                   ▼                           ▼
-             [web_enrich_retry]         [rank_and_explain] ── LLM adaptativo (§6.5)
-             (loop → rag_retrieve)             │
-                                               ▼
-                                       [guardrail_check] ── LLM valida scope (§6.6)
-                                               │
-                                               ▼
-                                         [emit_response]
-                                               │
-                                               ▼
-                                              END
+[query_rewrite]     ── LLM reescribe a vocabulario técnico del catálogo
+  │                       (incluye mentionedPlaces / mentionedCategories)
+  ▼
+[rag_retrieve]      ── Módulo A + filtro geo Haversine 100km
+  │                       (cuando intent.mentionedPlaces resuelve a
+  │                        deptos con coords oficiales)
+  ▼
+[evaluate_match]    ── LLM scorea cada candidato
+  │
+  ▼
+[route: anyStrong OR goodAvg OR retries exhausted]
+  │
+  ┌─────────────┼─────────────┐
+  │ no                        │ sí
+  ▼                           ▼
+[web_enrich_retry]      [rank_and_explain] ── LLM adaptativo (§6.5)
+(Tavily como rescate           │
+ cuando avg score bajo;        ▼
+ loop → query_rewrite)   [guardrail_check] ── LLM valida scope (§6.6)
+                               │
+                               ▼
+                         [emit_response]
+                               │
+                               ▼
+                              END
 ```
+
+> **Nota — eliminación de la rama Tavily proactiva**: en una iteración previa el grafo tenía un router `extract_intent → web_enrich (Tavily) → query_rewrite` cuando `isOnlyPlace=true`. Con el catálogo de 110 actividades de La Rioja + el filtro geo Haversine, el RAG ya alcanza para responder bien sin pagar latencia + cuota Tavily. La rama se removió: `extract_intent → query_rewrite` es directo. Tavily sólo se invoca como rescate del loop CRAG (`web_enrich_retry`) cuando `evaluate_match` da score insuficiente.
 
 ### 6.2 Estado (State)
 
@@ -316,11 +340,25 @@ type CustomerState = {
   messages: ChatMessage[];          // historial conversacional
   intent?: {
     semanticQuery: string;          // query limpia para RAG
-    filters: RetrieveFilters;       // maxPriceArs, startAfter, endBefore
+    filters: {                      // RetrieveFilters
+      maxPriceArs?: number;
+      targetDate?: string;          // ISO YYYY-MM-DD (día puntual)
+      dateRangeStart?: string;      // ISO (rango)
+      dateRangeEnd?: string;
+      minAltitudeM?: number;        // solo si el usuario menciona NÚMERO explícito
+      maxAltitudeM?: number;
+      minElevationGainM?: number;
+      maxElevationGainM?: number;
+    };
     placeNames: string[];           // topónimos detectados
     isOnlyPlace: boolean;           // ¿es solo un lugar sin otro contexto?
+    mentionedPlaces: string[];      // departamentos/lugares de La Rioja nombrados
+    mentionedCategories: string[];  // categorías temáticas nombradas (bodegas, trekking…)
   };
-  webContext?: string;              // texto enriquecido de Tavily
+  webContext?: {                    // contexto Tavily estructurado
+    answer: string;                 // resumen sintetizado (≤1500 chars)
+    snippets: Array<{ url: string; title: string; snippet: string }>;
+  };
   candidates: ActivityHit[];        // resultados del RAG
   evaluation?: {
     id: string;
@@ -336,15 +374,19 @@ type CustomerState = {
 
 ### 6.3 Descripción y justificación por nodo
 
-**`extract_intent`** — Invoca al LLM con structured output (Zod schema) sobre los últimos N mensajes + turno actual. Devuelve `{semanticQuery, filters, placeNames, isOnlyPlace}`.
+**`extract_intent`** — Invoca al LLM con structured output (Zod schema) sobre los últimos N mensajes + turno actual. Devuelve `{semanticQuery, filters, placeNames, isOnlyPlace, mentionedPlaces, mentionedCategories}`.
 
 *Por qué estructurado y no reescritura texto-a-texto*: la extracción estructurada es más robusta. Los filtros alimentan SQL (exactitud); el `semanticQuery` alimenta el embedding (flexibilidad). Pasar el historial habilita refinamiento conversacional ("más barato", "con menos altitud") — cumple el requisito del brief de "ajustar propuestas basándose en el feedback inmediato".
 
-**`web_enrich`** — Solo si `isOnlyPlace = true`. Llama a Tavily con el/los nombres de lugar. Extrae altitud, dificultad, paisaje, clima del lugar. El texto se inyecta al `semanticQuery`.
+*Por qué `mentionedPlaces` / `mentionedCategories` separados de `placeNames`*: estos dos arrays capturan señales del catálogo (departamentos de La Rioja, categorías temáticas como "bodegas" / "astroturismo") sin convertirlos en filtros WHERE. El nodo `query_rewrite` los suma al `enrichedQuery` para que el embedding pondere lo que el usuario pidió contra las líneas `Categorías:` y `Departamento:` que viven en el texto embeddeado de cada actividad. Matching 100% semántico, sin recall cliff por nombres mal escritos o slugs ausentes.
 
-*Por qué condicional*: si el usuario ya dio contexto rico ("trekking suave cerca del mar"), la enrichment es ruido. Solo cuando la query es ambigua (solo un topónimo) el enrichment aporta.
+**`query_rewrite`** — LLM con structured output que reescribe el `semanticQuery` traduciendo demografía / salud / nivel vago al vocabulario técnico del catálogo (dificultad, desnivel, altitud, perfil del público, audience tags). Recibe además `mentionedPlaces` y `mentionedCategories` como "pistas del catálogo" para reforzar matching contra las líneas `Departamento:` y `Categorías:` que viven en el texto embeddeado.
 
-**`rag_retrieve`** — Llama a `retrieveActivities(semanticQuery, 8, filters)` del Módulo A. Sin LLM.
+*Por qué un nodo aparte y no parte de extract_intent*: separar la limpieza de intención (qué quiere el usuario) de la traducción al vocabulario del catálogo (cómo lo encontramos) hace cada nodo trivial de testear y permite cambiar el rewrite sin tocar la extracción.
+
+**`rag_retrieve`** — Llama a `retrieveActivities(semanticQuery, 6, filters)` del Módulo A. Sin LLM. Antes de invocar resuelve `intent.mentionedPlaces` (deptos riojanos) a coordenadas oficiales vía `resolveMentionedPlaces` (`src/lib/services/places.ts`); si hay matches, agrega `nearPoints[]` + `maxDistanceKm: 100` a los filtros para activar el filtro Haversine en el SQL (ver Módulo A). Las activities sin lat/lng quedan excluidas cuando el filtro está set.
+
+**`web_enrich_retry`** (rescate del loop CRAG, NO proactivo) — Sólo se invoca cuando `evaluate_match` da score insuficiente. Llama a Tavily con `searchDepth: "advanced"` (mismo nivel que el augment del Módulo E) e inyecta el `answer` al `semanticQuery` para mejorar el retrieval, **y guarda el shape estructurado `{answer, snippets[]}` en `webContext`** para que `query_rewrite` razone sobre los fragmentos crudos en la próxima pasada — los snippets suelen aportar nombres propios y datos físicos que el resumen pierde. Mismo patrón de "INFO WEB" que `synthesize` del augment, unificando el contrato entre los dos grafos. El proceso vuelve por `query_rewrite`.
 
 **`evaluate_match`** — Patrón **CRAG (Corrective RAG)** [Yan et al., 2024]. El LLM evalúa cada candidato contra la intención del usuario: `{relevance ∈ [0,1], reason}`. Calcula `avgScore`.
 

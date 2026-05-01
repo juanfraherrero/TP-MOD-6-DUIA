@@ -46,8 +46,9 @@ Los textos que generes se van a indexar en un sistema RAG (embeddings semántico
    - Montaña → "alta montaña", "aire frío", "cumbres", "panorámicas".
    - Selva → "vegetación densa", "ríos", "fauna".
    Esto mejora el match con queries de tono o ambiente.
-4. NO inventes datos duros. Si Tavily no confirmó altitud, dejá altitudeM=null. NUNCA pongas un número especulativo.
+4. NO inventes datos duros. Si Tavily no confirmó altitud, dejá altitudeM=null. NUNCA pongas un número especulativo. Lo mismo para coordenadas (suggestedLat / suggestedLng): null si no hay confirmación textual.
 5. Mantené el tono claro, descriptivo, profesional — sin superlativos vacíos ni márketing barato.
+6. Si los snippets de las fuentes contienen datos concretos (horarios, precios, dirección, coordenadas, altitud), priorizalos por sobre cualquier suposición. El resumen es una síntesis, los snippets son el material fuente.
 
 ## Ejemplo corto del estilo esperado
 
@@ -60,7 +61,10 @@ Bien: "Trekking de dificultad media en alta montaña, con vistas panorámicas al
 - requirements: lista corta o texto con edad recomendada, equipo, experiencia, condiciones médicas relevantes.
 - physicalPrep: texto corto describiendo el nivel físico esperado y cómo prepararse.
 - altitudeM, elevationGainM: solo con datos confirmados por el contexto web. null en duda.
+- suggestedLat, suggestedLng: coordenadas geográficas (grados decimales, ej. -29.413100, -66.855900). SOLO si los snippets las confirman explícitamente — null en duda. Los dos van juntos: si solo conocés uno, devolvé null en ambos.
 - ragNotes: 1-2 líneas internas (las ve el admin) explicando qué vocabulario agregaste para optimizar retrieval.
+- suggestedClassificationSlugs: 0 a 3 slugs del CATÁLOGO VIGENTE que aparecen en el user prompt. SOLO slugs textualmente presentes en esa lista — nunca inventes slugs nuevos. Lista vacía si nada del catálogo encaja.
+- suggestedDepartmentSlugs: 0 a 3 slugs de departamentos del CATÁLOGO VIGENTE. Misma regla: textuales, sin inventar.
 
 ## EJEMPLO COMPLETO (RAG rewriting — antes y después)
 
@@ -69,13 +73,19 @@ Input:
 - Descripción original (pobre): "Una linda caminata en El Chaltén."
 - Tavily: "La Laguna de los Tres está a 1170m de altitud, trekking de unas 10h ida y vuelta, dificultad media-alta, vista directa al Fitz Roy..."
 
-Output:
+Output (asumiendo CATÁLOGO con clasificaciones [trekking, aventura-y-naturaleza] y departamentos [chilecito, famatina]):
 {"description": "Trekking de dificultad media-alta en la región de El Chaltén, Santa Cruz, con destino a la Laguna de los Tres al pie del Cerro Fitz Roy. El recorrido completo demanda 10 horas ida y vuelta atravesando bosque andino, pedregales y el último tramo de ascenso con pendiente pronunciada. Paisaje típico de alta montaña patagónica: aire frío, vistas panorámicas al glaciar y a la laguna de origen glacial. Apto para personas con experiencia básica en caminatas de montaña y buen estado físico. Recomendado en primavera y verano por clima más estable.",
  "requirements": "Edad mínima 14 años. Equipo: calzado de trekking, capa de abrigo, protección solar, 2L de agua, snacks. Experiencia previa en caminatas de 6h+.",
  "physicalPrep": "Nivel físico medio-alto. Entrenar con caminatas progresivas de 4 a 8 horas en las semanas previas, sumando desnivel.",
  "altitudeM": 1170,
  "elevationGainM": null,
- "ragNotes": "Agregué vocabulario: alta montaña patagónica, bosque andino, pedregal, glaciar, aire frío, vistas panorámicas. Sinónimos de dificultad para matchear queries naturales."}
+ "suggestedLat": -49.299,
+ "suggestedLng": -73.020,
+ "ragNotes": "Agregué vocabulario: alta montaña patagónica, bosque andino, pedregal, glaciar, aire frío, vistas panorámicas. Sinónimos de dificultad para matchear queries naturales.",
+ "suggestedClassificationSlugs": ["trekking", "aventura-y-naturaleza"],
+ "suggestedDepartmentSlugs": []}
+
+(Nota: el ejemplo es de Santa Cruz, no de La Rioja, así que NO sugerí departamentos. Si el catálogo no tuviera "trekking" como slug, suggestedClassificationSlugs sería [] — nunca se inventa.)
 
 FORMATO: tenés una tool disponible — invocala como respuesta. No expliques, no des markdown, no uses texto plano. Solo la tool call con los parámetros correctos.
 

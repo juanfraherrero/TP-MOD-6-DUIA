@@ -20,10 +20,29 @@ export const activityInputSchema = z
     // el service genera tags vía LLM (data augmentation). Si el admin manda
     // un array, se respeta tal cual y se skipea la generación.
     audienceTags: z.array(z.string().min(1).max(80)).optional(),
+    lat: z.coerce.number().min(-90).max(90).nullable().optional(),
+    lng: z.coerce.number().min(-180).max(180).nullable().optional(),
+    gallery: z
+      .array(
+        z.object({
+          full: z.string().url().nullable(),
+          thumb: z.string().url().nullable(),
+          caption: z.string().nullable(),
+        }),
+      )
+      .default([]),
+    departmentIds: z.array(z.string().uuid()).default([]),
+    classificationIds: z.array(z.string().uuid()).default([]),
   })
   .refine((d) => d.endDate >= d.startDate, {
     message: "endDate debe ser >= startDate",
     path: ["endDate"],
   });
 
-export type ActivityInput = z.infer<typeof activityInputSchema>;
+// Tipo del input al schema — los campos con `.default()` son opcionales acá
+// (el .parse() los completa). Usar este shape en callers que construyen
+// literales (form, seed, augment) para no tener que repetir defaults.
+export type ActivityInput = z.input<typeof activityInputSchema>;
+// Tipo post-parse — todos los defaults aplicados. Útil para internals que
+// reciben datos ya validados.
+export type ActivityInputParsed = z.output<typeof activityInputSchema>;

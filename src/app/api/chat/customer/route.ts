@@ -87,6 +87,21 @@ export async function POST(req: NextRequest) {
           payload: e.payload,
         }));
 
+        // Métricas de retrieval/evaluation (G3): permiten correlacionar
+        // calidad semántica del catálogo (topDistance), volumen de hits
+        // pre-evaluator (candidatesCount) y la distribución de scores del
+        // evaluator (evaluationScores) con el matchQuality final.
+        const evaluationScores: number[] = Array.isArray(finalState.evaluation)
+          ? (finalState.evaluation as Array<{ relevance: number }>).map(
+              (e) => e.relevance,
+            )
+          : [];
+        const candidates = (finalState.candidates ?? []) as Array<{
+          distance: number;
+        }>;
+        const topDistance = candidates[0]?.distance ?? null;
+        const candidatesCount = candidates.length;
+
         events.push({
           sessionId,
           eventType: "chat_turn_completed",
@@ -104,6 +119,9 @@ export async function POST(req: NextRequest) {
             blockedByOutputGuard: pending.some(
               (e) => e.eventType === "guardrail_output_blocked",
             ),
+            evaluationScores,
+            topDistance,
+            candidatesCount,
             intent: finalState.intent
               ? {
                   placeNames: finalState.intent.placeNames ?? [],

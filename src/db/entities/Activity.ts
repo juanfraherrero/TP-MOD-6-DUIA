@@ -5,10 +5,20 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  ManyToMany,
+  JoinTable,
 } from "typeorm";
 import type { Relation } from "typeorm";
 import { ActivityChunk } from "./ActivityChunk";
+import { Department } from "./Department";
+import { Classification } from "./Classification";
 import type { Recurrence } from "@/lib/validation/recurrence";
+
+export type GalleryImage = {
+  full: string | null;
+  thumb: string | null;
+  caption: string | null;
+};
 
 @Entity("activities")
 export class Activity {
@@ -76,6 +86,24 @@ export class Activity {
   })
   audienceTags!: string[];
 
+  @Column({ type: "numeric", precision: 9, scale: 6, nullable: true })
+  lat!: number | null;
+
+  @Column({ type: "numeric", precision: 9, scale: 6, nullable: true })
+  lng!: number | null;
+
+  @Column({ type: "jsonb", default: () => "'[]'::jsonb" })
+  gallery!: GalleryImage[];
+
+  @Column({
+    type: "varchar",
+    length: 255,
+    nullable: true,
+    unique: true,
+    name: "source_slug",
+  })
+  sourceSlug!: string | null;
+
   @CreateDateColumn({ type: "timestamptz", name: "created_at" })
   createdAt!: Date;
 
@@ -84,4 +112,23 @@ export class Activity {
 
   @OneToMany(() => ActivityChunk, (chunk) => chunk.activity, { cascade: true })
   chunks!: Relation<ActivityChunk>[];
+
+  @ManyToMany(() => Department, { cascade: false })
+  @JoinTable({
+    name: "activity_departments",
+    joinColumn: { name: "activity_id", referencedColumnName: "id" },
+    inverseJoinColumn: { name: "department_id", referencedColumnName: "id" },
+  })
+  departments!: Relation<Department>[];
+
+  @ManyToMany(() => Classification, { cascade: false })
+  @JoinTable({
+    name: "activity_classifications",
+    joinColumn: { name: "activity_id", referencedColumnName: "id" },
+    inverseJoinColumn: {
+      name: "classification_id",
+      referencedColumnName: "id",
+    },
+  })
+  classifications!: Relation<Classification>[];
 }

@@ -1,6 +1,6 @@
 // Dot que marca un nodo de un grafo de agente.
-// - active=true → indigo sólido + animate-ping outward (está corriendo).
-// - active=false → indigo opaco al 40% (ya completó).
+// - active=true → brand-primary sólido + animate-ping outward (está corriendo).
+// - active=false → brand-primary opaco al 40% (ya completó).
 
 export function PhaseDot({ active }: { active: boolean }) {
   if (!active) {

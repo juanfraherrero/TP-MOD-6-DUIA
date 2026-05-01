@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createLogger } from "@/lib/logger";
 import { retrieveActivities, type RetrieveFilters } from "@/rag";
+import { resolveMentionedPlaces } from "@/lib/services/places";
 import { createLLM, invokeStructured } from "../shared/llm";
 import { tavilySearch } from "../shared/tavily";
 import {
@@ -72,9 +73,9 @@ const inputGuardSchema = z.object({
   reason: z.string().default("").describe("Una línea explicando."),
 });
 
-const OUT_OF_SCOPE_MESSAGE = `Uh, me parece que eso se escapa de lo mío — yo solo te puedo ayudar con actividades de turismo aventura (trekking, escalada, rafting, cabalgatas, ese tipo de onda).
+const OUT_OF_SCOPE_MESSAGE = `Uh, eso se escapa de lo mío — sólo te puedo ayudar con actividades de turismo en La Rioja, Argentina (trekking, bodegas, cabalgatas, astroturismo, paseos, etc.).
 
-¿Probás con algo de eso? Por ejemplo, decime qué tipo de experiencia tenés ganas de vivir, o si tenés algún lugar en mente.`;
+¿Probás con algo de eso? Por ejemplo decime un departamento como Chilecito, Famatina o Capital, o el tipo de experiencia que tenés ganas.`;
 
 export async function inputGuard(
   state: CustomerState,
@@ -166,6 +167,34 @@ const intentSchema = z.object({
         .string()
         .nullish()
         .describe("Fecha ISO YYYY-MM-DD de fin del rango temporal."),
+      minAltitudeM: z
+        .number()
+        .nonnegative()
+        .nullish()
+        .describe(
+          "Solo si el usuario menciona NÚMERO EXPLÍCITO de altitud mínima (p. ej. 'sobre 4000 metros', 'a más de 3000m').",
+        ),
+      maxAltitudeM: z
+        .number()
+        .nonnegative()
+        .nullish()
+        .describe(
+          "Solo si el usuario menciona NÚMERO EXPLÍCITO de altitud máxima (p. ej. 'menos de 1000 metros').",
+        ),
+      minElevationGainM: z
+        .number()
+        .nonnegative()
+        .nullish()
+        .describe(
+          "Solo si el usuario menciona NÚMERO EXPLÍCITO de desnivel mínimo.",
+        ),
+      maxElevationGainM: z
+        .number()
+        .nonnegative()
+        .nullish()
+        .describe(
+          "Solo si el usuario menciona NÚMERO EXPLÍCITO de desnivel máximo (p. ej. 'desnivel hasta 500m').",
+        ),
     })
     .default({}),
   placeNames: z
@@ -177,6 +206,22 @@ const intentSchema = z.object({
     .default(false)
     .describe(
       "true si y solo si el mensaje consiste casi exclusivamente en un nombre de lugar sin otras preferencias.",
+    ),
+  // Señales de catálogo: NO se usan como filtros WHERE (el matching es 100%
+  // semántico vía embedding). El query_rewrite las incorpora al enrichedQuery
+  // para reforzar el match contra "Categorías: ..." / "Departamento: ..." que
+  // se concatenan en el texto embeddeado durante la ingesta.
+  mentionedPlaces: z
+    .array(z.string())
+    .default([])
+    .describe(
+      "Departamentos o lugares específicos de La Rioja nombrados (Chilecito, Famatina, Capital, etc.).",
+    ),
+  mentionedCategories: z
+    .array(z.string())
+    .default([])
+    .describe(
+      "Categorías temáticas nombradas (bodegas, trekking, astroturismo, cabalgatas, etc.).",
     ),
 });
 
@@ -217,41 +262,11 @@ export async function extractIntent(
     filters: intent.filters,
     placeNames: intent.placeNames,
     isOnlyPlace: intent.isOnlyPlace,
+    mentionedPlaces: intent.mentionedPlaces,
+    mentionedCategories: intent.mentionedCategories,
   });
 
   return { intent };
-}
-
-// ---------------------------------------------------------------------------
-// 2. web_enrich (proactivo cuando isOnlyPlace)
-// ---------------------------------------------------------------------------
-
-export async function webEnrich(
-  state: CustomerState,
-): Promise<Partial<CustomerState>> {
-  const intent = requireIntent(state);
-  const places = intent.placeNames.join(", ");
-  if (!places) {
-    log.warn("webEnrich sin placeNames — skip");
-    return {};
-  }
-
-  log.info("enrichment proactivo", { places });
-  const result = await tavilySearch(
-    `${places} turismo aventura: altitud, dificultad, paisaje, clima, actividades recomendadas`,
-    { maxResults: 3 },
-  );
-
-  if (!result) return {};
-
-  const context = result.answer.slice(0, 1200);
-  const merged: Intent = {
-    ...intent,
-    semanticQuery:
-      `${intent.semanticQuery}. Contexto de ${places}: ${context}`.slice(0, 1500),
-  };
-
-  return { webContext: context, intent: merged };
 }
 
 // ---------------------------------------------------------------------------
@@ -288,6 +303,49 @@ export async function queryRewrite(
   const intent = requireIntent(state);
   const end = log.time("query_rewrite");
 
+  // Señales del catálogo a reforzar en el enrichedQuery. NO traducir a
+  // filtros — el matching es semántico: las categorías y departamentos viven
+  // dentro del texto embeddeado de cada activity (ver rag/ingest.ts).
+  const catalogHints: string[] = [];
+  if (intent.mentionedPlaces.length > 0) {
+    catalogHints.push(
+      `Departamentos/lugares mencionados: ${intent.mentionedPlaces.join(", ")}.`,
+    );
+  }
+  if (intent.mentionedCategories.length > 0) {
+    catalogHints.push(
+      `Categorías mencionadas: ${intent.mentionedCategories.join(", ")}.`,
+    );
+  }
+  const catalogHintsBlock =
+    catalogHints.length > 0
+      ? `\n\nPISTAS DEL CATÁLOGO (incorporá estos términos LITERALMENTE al enrichedQuery — son matches contra el texto embeddeado de las actividades, NO filtros):\n${catalogHints.join("\n")}`
+      : "";
+
+  // Bloque INFO WEB — mismo patrón que augment-activity/synthesize. Se arma
+  // sólo cuando webContext está presente (típicamente después de un loop CRAG
+  // con web_enrich_retry). Pasamos answer + snippets crudos: los snippets
+  // suelen tener datos concretos que el resumen pierde.
+  const web = state.webContext;
+  const webBlock = web
+    ? `\n\nINFO WEB (resumen + snippets de fuentes — priorizá snippets para datos concretos):
+
+Resumen:
+${web.answer || "(vacío)"}
+
+Fragmentos de fuentes:
+${
+  web.snippets.length > 0
+    ? web.snippets
+        .map(
+          (s, i) =>
+            `${i + 1}. [${s.title || s.url}](${s.url})\n   ${s.snippet || "(sin snippet)"}`,
+        )
+        .join("\n\n")
+    : "(sin snippets)"
+}`
+    : "";
+
   try {
     const result = await invokeStructured(
       queryRewriteSchema,
@@ -295,8 +353,7 @@ export async function queryRewrite(
         ["system", QUERY_REWRITE_SYSTEM],
         [
           "user",
-          `semanticQuery a reescribir: "${intent.semanticQuery}"
-${state.webContext ? `\nContexto web previo (resumen): ${state.webContext.slice(0, 400)}` : ""}
+          `semanticQuery a reescribir: "${intent.semanticQuery}"${webBlock}${catalogHintsBlock}
 
 Devolvé enrichedQuery, rewriteApplied y reasoning.`,
         ],
@@ -346,7 +403,26 @@ export async function ragRetrieve(
     targetDate: intent.filters.targetDate ?? undefined,
     dateRangeStart: intent.filters.dateRangeStart ?? undefined,
     dateRangeEnd: intent.filters.dateRangeEnd ?? undefined,
+    minAltitudeM: intent.filters.minAltitudeM ?? undefined,
+    maxAltitudeM: intent.filters.maxAltitudeM ?? undefined,
+    minElevationGainM: intent.filters.minElevationGainM ?? undefined,
+    maxElevationGainM: intent.filters.maxElevationGainM ?? undefined,
   };
+
+  // Resolver mentionedPlaces (departamentos riojanos detectados por
+  // extract_intent) a coordenadas oficiales de la cabecera departamental.
+  // Las menciones que no matchean ningún depto se omiten silenciosamente.
+  // Si hay al menos un point, aplicamos filtro Haversine 100km en el SQL.
+  const points = await resolveMentionedPlaces(intent.mentionedPlaces ?? []);
+  if (points.length > 0) {
+    filters.nearPoints = points.map((p) => ({ lat: p.lat, lng: p.lng }));
+    filters.maxDistanceKm = 100;
+    log.info("geo filter aplicado", {
+      mentionedPlaces: intent.mentionedPlaces,
+      resolvedPoints: points.map((p) => p.name),
+      maxDistanceKm: 100,
+    });
+  }
 
   // Concatenamos el query original con el reescrito (si existe). Belt &
   // suspenders: el embedding contiene tanto el lenguaje natural del usuario
@@ -452,24 +528,45 @@ export async function webEnrichRetry(
   const intent = requireIntent(state);
   log.info("CRAG retry — avgScore bajo", { avgScore: state.avgScore });
 
+  // searchDepth advanced + snippets crudos: alineado con el augment (§4.12).
+  // El answer va a expandir el semanticQuery acá (señal coarse), y los
+  // snippets viajan en webContext para que query_rewrite los procese fino.
   const result = await tavilySearch(
     `${intent.semanticQuery} turismo aventura argentina: tipos de actividades, destinos recomendados`,
-    { maxResults: 3 },
+    { maxResults: 3, searchDepth: "advanced" },
   );
 
   if (!result) {
     return { webRetries: state.webRetries + 1 };
   }
 
-  const context = result.answer.slice(0, 1000);
-  const enriched: Intent = {
-    ...intent,
-    semanticQuery:
-      `${intent.semanticQuery}. Info adicional: ${context}`.slice(0, 1500),
+  const answer = result.answer.slice(0, 1500);
+  const webContext = {
+    answer,
+    snippets: result.sources.map((s) => ({
+      url: s.url,
+      title: s.title,
+      snippet: s.snippet.slice(0, 600),
+    })),
   };
 
+  // Solo el answer entra al semanticQuery — los snippets los consume
+  // query_rewrite via state.webContext (recibe el shape estructurado).
+  const enriched: Intent = {
+    ...intent,
+    semanticQuery: `${intent.semanticQuery}. Info adicional: ${answer}`.slice(
+      0,
+      1500,
+    ),
+  };
+
+  log.info("web_enrich_retry ok", {
+    answerLen: answer.length,
+    snippets: webContext.snippets.length,
+  });
+
   return {
-    webContext: context,
+    webContext,
     intent: enriched,
     webRetries: state.webRetries + 1,
   };
@@ -639,6 +736,22 @@ ${candidatesList}`;
   );
   end();
 
+  // Validación de largo del pitch (G5): el prompt fuerza 200-320 chars (rango
+  // ideal). Si el LLM sale del rango 150-400 lo logueamos como warn para
+  // detectar drift en producción. NO truncamos ni reintentamos: el LLM raramente
+  // falla este constraint cuando está explícito en el system prompt, y un retry
+  // duplica latencia. El log alcanza para tracking.
+  for (const p of result.proposals) {
+    const len = p.pitch?.length ?? 0;
+    if (len < 150 || len > 400) {
+      log.warn("pitch fuera de rango (esperado 200-320, hard 150-400)", {
+        id: p.id,
+        length: len,
+        pitchPreview: (p.pitch ?? "").slice(0, 100),
+      });
+    }
+  }
+
   let ranked = result.proposals
     .map((p, i) => {
       const activity = state.candidates.find((c) => c.id === p.id);
@@ -767,12 +880,6 @@ export async function emitResponse(
 // ---------------------------------------------------------------------------
 // Conditional routers
 // ---------------------------------------------------------------------------
-
-export function routeEnrichment(
-  state: CustomerState,
-): "web_enrich" | "rag_retrieve" {
-  return state.intent?.isOnlyPlace ? "web_enrich" : "rag_retrieve";
-}
 
 export function routeEvaluation(
   state: CustomerState,

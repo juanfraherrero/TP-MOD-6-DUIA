@@ -144,11 +144,15 @@ Ver detalle completo en `docs/INFORME_TP.md` §8.
 
 **Contexto**: el corpus de `activities` lo carga el admin a mano. Descripciones pobres indexan pobre en pgvector → el agente cliente (Módulo B) no encuentra actividades que son match por contenido pero no por texto.
 
-**Decisión**: un grafo LangGraph de 4 nodos (`extract_context` → `web_research` → `synthesize` → `emit_response`) disparado por un botón *"Aumentar con IA"* al lado de Crear/Actualizar en `ActivityForm`. El grafo combina un LLM estructurado (extrae lugar + tipo de actividad) con Tavily (web grounding sobre altitud, clima, paisaje) y un segundo LLM que reescribe los campos optimizando vocabulario para retrieval semántico (*retrieval-augmented writing*).
+**Decisión**: un grafo LangGraph de 4 nodos (`extract_context` → `web_research` → `synthesize` → `emit_response`) disparado por un botón *"Aumentar con IA"* al lado de Crear/Actualizar en `ActivityForm`. El grafo combina un LLM estructurado (extrae lugar + tipo de actividad) con Tavily (web grounding) y un segundo LLM que reescribe los campos optimizando vocabulario para retrieval semántico (*retrieval-augmented writing*).
 
 El admin ve la propuesta en una modal editable (fases en vivo vía SSE, fuentes consultadas, `ragNotes` explicando qué se optimizó). Acepta, edita o cancela. **Ningún campo se pisa en silencio**.
 
-**Por qué no tocar todo**: `title`, `priceArs`, fechas, `imageUrl`, `isActive` son decisiones del admin — el grafo solo aumenta `description`, `requirements`, `physicalPrep`, `altitudeM`, `elevationGainM` (los últimos dos solo con grounding web confirmado — nunca alucinados).
+**Query Tavily adaptativa por tipo de actividad**: el sufijo `"altitud, dificultad, paisaje, clima"` que estaba hardcoded sesgaba al estilo trekking aunque la actividad fuese una bodega. El nodo `web_research` arma ahora la query con `placeName + activityType + keywords del extract_context + foco temático` derivado de un mapeo regex `FOCUS_BY_TYPE` (bodega → "varietales, degustación, gastronomía local"; trekking → "altitud, dificultad, ruta, equipo"; museo → "historia, exhibiciones, horarios"; etc.) + bloque fijo `"ubicación coordenadas geográficas dirección"` para grounding de coords. `searchDepth: "advanced"` (admin-facing, no time-critical, costo Tavily despreciable para volumen TP). `tavilySearch` ahora expone `sources[].snippet` (content crudo) además del `answer`, y soporta `includeDomains`/`excludeDomains`.
+
+**Snippets crudos en synthesize**: el `webContext` que se pasa al segundo LLM ahora es `{answer, snippets[]}` en lugar de un string plano — los datos duros (horarios, dirección, coordenadas) suelen venir en los snippets, no en el resumen. Cap 600 chars por snippet × 3 fuentes + 1500 chars de answer ≈ 3300 chars de contexto web.
+
+**Por qué no tocar todo**: `title`, `priceArs`, fechas, `imageUrl`, `isActive` son decisiones del admin — el grafo solo aumenta `description`, `requirements`, `physicalPrep`, `altitudeM`, `elevationGainM`, `suggestedLat`, `suggestedLng` (los últimos cuatro solo con grounding web confirmado — nunca alucinados; lat/lng llegan a la modal como sección "Coordenadas sugeridas" con toggle, y el form padre sólo aplica el par si el admin no cargó coords manualmente).
 
 **Logging**: scope `agent:augment` en los nodos, `api:augment` en la route. Singleton del grafo en `globalThis.__augmentGraph` con invalidación HMR (mismo patrón que customer/admin-sql).
 

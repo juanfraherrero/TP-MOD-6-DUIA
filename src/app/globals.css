@@ -5,50 +5,68 @@
 @tailwind utilities;
 
 /*
-  Theme tokens — los valores son tripletas rgb (separadas por espacio) para que
-  Tailwind pueda aplicar el modificador de opacidad `/X`. Los tokens transparentes
-  (rgba directo) van con `var(--xxx)` en tailwind.config y no aceptan `/X`.
+  Cinematic Glass — theme tokens.
 
-  Default = light. El dark mode se activa con `data-theme="dark"` en <html>.
+  Los valores son tripletas rgb (separadas por espacio) para que Tailwind pueda
+  aplicar el modificador `/X`. Los tokens transparentes (rgba directo) van con
+  `var(--xxx)` en tailwind.config y NO aceptan `/X`.
+
+  Default = light. Dark mode con `data-theme="dark"` en <html>.
+  Brand (green) y glass (white + opacity) son theme-agnostic.
 */
 @layer base {
   :root {
-    /* Surfaces */
-    --surface-primary: 255 255 255;       /* page bg */
-    --surface-secondary: 247 248 248;     /* panels, bubbles */
-    --surface-tertiary: 239 240 241;      /* hover bg, sutil */
-    --surface-overlay: 247 248 248;       /* modal container bg */
+    /* Brand — verde institucional (constante, no flipea por tema) */
+    --brand-primary: 15 122 74;            /* #0F7A4A */
+    --brand-accent: 22 160 106;            /* #16A06A */
+    --brand-deep: 10 92 56;                /* #0A5C38 */
 
-    /* Text */
+    /* Solid surfaces (warm off-white en light) */
+    --surface-primary: 250 250 247;        /* #FAFAF7 */
+    --surface-secondary: 242 241 236;      /* #F2F1EC */
+    --surface-tertiary: 232 230 221;       /* #E8E6DD */
+    --surface-overlay: 222 221 211;        /* #DEDDD3 */
+
+    /* Solid text (warm grays) */
     --text-primary: 8 9 10;
-    --text-secondary: 98 102 109;         /* gris medio — funciona en ambos */
-    --text-tertiary: 138 143 152;         /* gris claro — funciona en ambos */
-    --text-muted: 56 59 63;                /* darker gray para hover state */
-    --text-on-cta: 255 255 255;
+    --text-secondary: 94 88 82;            /* #5E5852 */
+    --text-tertiary: 138 132 124;          /* #8A847C */
+    --text-muted: 56 53 48;                /* #383530 */
+    --text-on-cta: 255 255 255;            /* siempre white sobre verde */
 
-    /* CTA (button principal) */
-    --cta-bg: 8 9 10;                      /* dark button on light bg */
+    /* Legacy CTA tokens (mantenidos para superficies sólidas no-brand) */
+    --cta-bg: 8 9 10;
     --cta-bg-hover: 35 37 42;
 
     /* State colors */
-    --warning: 180 125 26;                  /* texto warning sobre warning-bg */
-    --warning-bg: 250 230 180;              /* bg solido amarillo cremoso */
-    --warning-border: 232 209 153;          /* border amber */
-    --danger: 201 42 42;                    /* texto destructivo */
-    --danger-hover: 185 28 28;              /* hover */
+    --warning: 180 125 26;
+    --warning-bg: 250 230 180;
+    --warning-border: 232 209 153;
+    --danger: 201 42 42;
+    --danger-hover: 185 28 28;
 
-    /* Transparentes (rgba) — sin alpha modifier */
-    --border-soft: rgba(0, 0, 0, 0.06);     /* separadores muy sutiles */
-    --border-medium: rgba(0, 0, 0, 0.10);   /* borders de input/card */
-    --border-strong: rgba(0, 0, 0, 0.14);   /* hover de border-medium */
+    /* Borders y backgrounds transparentes (rgba) */
+    --border-soft: rgba(0, 0, 0, 0.06);
+    --border-medium: rgba(0, 0, 0, 0.10);
+    --border-strong: rgba(0, 0, 0, 0.14);
     --bg-input: rgba(0, 0, 0, 0.02);
-    --bg-surface-soft: rgba(0, 0, 0, 0.03); /* bg sutil para hover de filas */
+    --bg-surface-soft: rgba(0, 0, 0, 0.03);
     --bg-modal-backdrop: rgba(8, 9, 10, 0.40);
-    --danger-bg: rgba(201, 42, 42, 0.08);   /* hover ghost danger */
-    --info-bg: rgba(94, 106, 210, 0.08);    /* panel info */
-    --info-border: rgba(94, 106, 210, 0.20);
+    --danger-bg: rgba(201, 42, 42, 0.08);
 
-    /* Shadows — se ajustan por tema (más opacas en dark, sutiles en light) */
+    /* Info — ahora green-tinted (alineado con brand) */
+    --info-bg: rgba(15, 122, 74, 0.08);
+    --info-border: rgba(15, 122, 74, 0.20);
+
+    /* Glass tokens (theme-agnostic — siempre white con baja opacidad) */
+    --glass-bg: rgba(255, 255, 255, 0.06);
+    --glass-bg-strong: rgba(255, 255, 255, 0.08);
+    --glass-bg-hover: rgba(255, 255, 255, 0.16);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --glass-border-strong: rgba(255, 255, 255, 0.18);
+    --glass-highlight: rgba(255, 255, 255, 0.15);
+
+    /* Shadows */
     --shadow-l1: 0 1px 0 0 rgba(0, 0, 0, 0.08);
     --shadow-l2:
       rgba(0, 0, 0, 0) 0 8px 2px 0,
@@ -57,6 +75,12 @@
       rgba(0, 0, 0, 0.10) 0 1px 1px 0,
       rgba(0, 0, 0, 0.12) 0 0 1px 0;
     --shadow-input: rgba(0, 0, 0, 0.04) 0 0 0 1px;
+    --shadow-glass:
+      inset 0 1px 0 rgba(255, 255, 255, 0.15),
+      0 24px 60px rgba(0, 0, 0, 0.25);
+    --shadow-glass-sm:
+      inset 0 1px 0 rgba(255, 255, 255, 0.15),
+      0 8px 24px rgba(0, 0, 0, 0.20);
   }
 
   [data-theme="dark"] {
@@ -66,10 +90,10 @@
     --surface-overlay: 8 9 10;
 
     --text-primary: 247 248 248;
-    --text-secondary: 98 102 109;
-    --text-tertiary: 138 143 152;
-    --text-muted: 180 188 208;
-    --text-on-cta: 8 9 10;
+    --text-secondary: 168 162 154;         /* #A8A29A — warmer */
+    --text-tertiary: 138 132 124;
+    --text-muted: 184 176 164;             /* #B8B0A4 */
+    --text-on-cta: 255 255 255;
 
     --cta-bg: 229 229 230;
     --cta-bg-hover: 218 218 219;
@@ -87,8 +111,10 @@
     --bg-surface-soft: rgba(255, 255, 255, 0.03);
     --bg-modal-backdrop: rgba(8, 9, 10, 0.80);
     --danger-bg: rgba(229, 72, 77, 0.10);
-    --info-bg: rgba(94, 106, 210, 0.08);
-    --info-border: rgba(94, 106, 210, 0.20);
+
+    /* Info en dark — accent green */
+    --info-bg: rgba(22, 160, 106, 0.12);
+    --info-border: rgba(22, 160, 106, 0.25);
 
     --shadow-l1: 0 1px 0 0 rgba(0, 0, 0, 0.40);
     --shadow-l2:
@@ -104,22 +130,21 @@
   body {
     @apply bg-surface-primary text-text-primary font-sans antialiased;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-    /* Transición suave al cambiar tema. Solo bg/colores, no layout. */
     transition: background-color 200ms ease, color 200ms ease;
   }
 
   ::selection {
-    background-color: rgba(94, 106, 210, 0.35);
+    background-color: rgba(15, 122, 74, 0.35);
   }
 }
 
 @layer components {
-  /* Receta canónica de input — adapta a tema via vars + focus glow indigo. */
+  /* Solid input — superficies sólidas, contextos densos. */
   .input {
-    @apply h-8 w-full px-3.5 py-3
+    @apply h-10 w-full px-3.5 py-2
            bg-input
            border border-medium rounded-md
-           text-[13.33px] text-text-primary
+           text-[14px] text-text-primary
            focus:outline-none focus:border-brand-primary
            focus:ring-4 focus:ring-brand-primary/15
            shadow-input
@@ -128,14 +153,55 @@
            transition-shadow;
   }
 
-  /* Glow utility — pegale a cualquier interactive que quieras "alive on focus".
-     Ej: chips, botones secundarios. NO usar en btn-primary (ya tiene shadow-l2). */
+  /* Focus glow para chips/secondary buttons. */
   .focus-glow {
     @apply focus-visible:outline-none
            focus-visible:ring-4 focus-visible:ring-brand-primary/15;
   }
 
-  /* Botón primary del sistema (CTA bg + L2). */
+  /* CTA primary verde — el ÚNICO botón de marca por pantalla. */
+  .btn-primary-cta {
+    @apply inline-flex items-center gap-2
+           h-10 px-4
+           rounded-xl
+           bg-brand-primary text-white
+           text-button
+           hover:bg-brand-accent active:bg-brand-deep
+           transition-colors
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Botón outline-CTA — alterna del primary verde. Mismo height y radius
+     para que en una fila con btn-primary-cta queden alineados. Ej: "Aumentar
+     con IA" al lado de "Actualizar". */
+  .btn-outline-cta {
+    @apply inline-flex items-center gap-2
+           h-10 px-4
+           rounded-xl
+           bg-transparent
+           border border-brand-primary/40
+           text-brand-primary text-button
+           hover:bg-brand-primary/[0.06] hover:border-brand-primary/60
+           transition-colors
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Botón secondary ghost — mismo height y radius que btn-primary-cta para
+     alinear visualmente cuando comparten fila. Sin bg, sin border. */
+  .btn-secondary {
+    @apply inline-flex items-center gap-2
+           h-10 px-4
+           rounded-xl
+           bg-transparent text-text-secondary
+           text-button
+           hover:bg-surface-soft hover:text-text-primary
+           transition-colors
+           disabled:opacity-40;
+  }
+
+  /* Botón primary legacy (dark CTA neutral, no-brand). Solo para controles
+     funcionales que no deben competir con un CTA verde en pantalla — ej:
+     trigger de file upload. */
   .btn-primary {
     @apply h-8 px-3 rounded-full
            bg-cta-bg text-text-on-cta
@@ -146,26 +212,68 @@
            disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
-  /* Botón secondary ghost. */
-  .btn-secondary {
-    @apply h-8 px-3 rounded-full
-           bg-transparent text-text-tertiary
-           text-btn font-normal
-           hover:text-text-muted
-           transition-colors
-           disabled:opacity-40;
-  }
-
-  /* Card estándar. */
-  .card-dark {
-    @apply bg-surface-primary
+  /* Card sólida — contextos densos. */
+  .card-solid {
+    @apply bg-surface-secondary
            border border-soft
            rounded-lg
            text-text-primary;
   }
+  /* Alias legacy del nombre antiguo (`.card-dark`) — theme-aware. */
+  .card-dark {
+    @apply card-solid;
+  }
 
-  /* Dot-grid pattern — textura técnica sutil para backgrounds.
-     Aplicar sobre containers; respeta el tema gracias a las vars. */
+  /* === GLASS SYSTEM ===
+     Receta canónica única: bg 6% / blur 24 / border 12% / inset highlight + drop shadow.
+     Solo varía el border-radius por componente. */
+
+  .glass-panel {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    box-shadow: var(--shadow-glass);
+  }
+
+  .glass-input {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    box-shadow: var(--shadow-glass-sm);
+  }
+
+  .glass-chip {
+    background: var(--glass-bg-strong);
+    border: 1px solid var(--glass-border-strong);
+    border-radius: 9999px;
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    transition: background-color 150ms ease;
+  }
+  .glass-chip:hover {
+    background: var(--glass-bg-hover);
+  }
+
+  /* Drop shadow para títulos sobre foto — legibilidad, no decoración. */
+  .text-shadow-hero {
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+  }
+
+  /* Mobile: bajar el blur a 16px para perf en iOS Safari. */
+  @media (max-width: 640px) {
+    .glass-panel,
+    .glass-input,
+    .glass-chip {
+      backdrop-filter: blur(16px) saturate(140%);
+      -webkit-backdrop-filter: blur(16px) saturate(140%);
+    }
+  }
+
+  /* Dot-grid pattern para backgrounds técnicos (admin sin foto). */
   .dot-grid {
     background-image: radial-gradient(
       circle,

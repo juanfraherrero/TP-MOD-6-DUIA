@@ -18,12 +18,19 @@ type TavilyResponse = {
 
 export type TavilySearchResult = {
   answer: string;
-  sources: { url: string; title: string }[];
+  // `snippet` es el `content` crudo del result. Lo exponemos junto con el
+  // resumen porque hay flujos (augment) que se benefician de razonar sobre
+  // los fragmentos originales (datos duros: dirección, horarios, coords).
+  sources: { url: string; title: string; snippet: string }[];
 };
 
 export type TavilyOptions = {
   maxResults?: number;
   searchDepth?: "basic" | "advanced";
+  // Restringen / excluyen dominios cuando importa la calidad de la fuente
+  // (ej: priorizar páginas oficiales de turismo). Pasados tal cual al body.
+  includeDomains?: string[];
+  excludeDomains?: string[];
 };
 
 export async function tavilySearch(
@@ -38,16 +45,24 @@ export async function tavilySearch(
 
   const end = log.time(`tavily "${query.slice(0, 40)}"`);
   try {
+    const body: Record<string, unknown> = {
+      api_key: apiKey,
+      query,
+      search_depth: options.searchDepth ?? "basic",
+      include_answer: true,
+      max_results: options.maxResults ?? 3,
+    };
+    if (options.includeDomains && options.includeDomains.length > 0) {
+      body.include_domains = options.includeDomains;
+    }
+    if (options.excludeDomains && options.excludeDomains.length > 0) {
+      body.exclude_domains = options.excludeDomains;
+    }
+
     const res = await fetch("https://api.tavily.com/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_key: apiKey,
-        query,
-        search_depth: options.searchDepth ?? "basic",
-        include_answer: true,
-        max_results: options.maxResults ?? 3,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {
@@ -66,7 +81,11 @@ export async function tavilySearch(
 
     return {
       answer,
-      sources: (data.results ?? []).map((r) => ({ url: r.url, title: r.title })),
+      sources: (data.results ?? []).map((r) => ({
+        url: r.url,
+        title: r.title,
+        snippet: r.content ?? "",
+      })),
     };
   } catch (err) {
     log.error("tavily fetch fallo", { error: String(err) });

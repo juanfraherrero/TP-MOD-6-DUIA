@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AIBadge } from "@/components/ui/AIBadge";
 import { Spinner } from "@/components/ui/Spinner";
 import { PhaseDot } from "@/components/ui/PhaseDot";
 import { ChatErrorBanner } from "@/components/ui/ChatErrorBanner";
+import type { Term } from "./MultiSelectChips";
 
 // Shape del form que consume el componente padre (ActivityForm).
 // Los campos numéricos vienen como string (inputs de texto) — al aplicar
@@ -21,16 +22,27 @@ type FormValues = {
   elevationGainM: string;
   priceArs: string;
   isActive: boolean;
+  // Coordenadas — el modal sólo las lee para decidir si pre-acepta el
+  // sugerido del agente o no (no las edita).
+  lat: string;
+  lng: string;
 };
 
 // Subset de FormValues que se puede mergear al aplicar — solo los campos que
-// el agente aumenta.
+// el agente aumenta. Incluye también los IDs de tax sugeridos (se mergean
+// con los que ya tenía el form, no reemplazan) y las coordenadas sugeridas
+// (el padre decide si las aplica o respeta las que ya cargó el admin).
 export type AugmentPatch = Partial<
   Pick<
     FormValues,
     "description" | "requirements" | "physicalPrep" | "altitudeM" | "elevationGainM"
   >
->;
+> & {
+  departmentIds?: string[];
+  classificationIds?: string[];
+  lat?: string;
+  lng?: string;
+};
 
 type AugmentedFields = {
   description: string;
@@ -38,7 +50,11 @@ type AugmentedFields = {
   physicalPrep: string;
   altitudeM: number | null;
   elevationGainM: number | null;
+  suggestedLat?: number | null;
+  suggestedLng?: number | null;
   ragNotes: string;
+  suggestedClassificationSlugs?: string[];
+  suggestedDepartmentSlugs?: string[];
 };
 
 type Source = { url: string; title: string };
@@ -47,6 +63,12 @@ type Props = {
   open: boolean;
   onClose: () => void;
   currentValues: FormValues;
+  // Catálogo + selección actual del form padre. Necesario para resolver los
+  // slugs sugeridos por el agente a IDs concretos antes de mergear.
+  currentDepartmentIds: string[];
+  currentClassificationIds: string[];
+  availableDepartments: Term[];
+  availableClassifications: Term[];
   onApply: (patch: AugmentPatch) => void;
 };
 
@@ -65,9 +87,26 @@ type EditableProposal = {
   physicalPrep: string;
   altitudeM: string;
   elevationGainM: string;
+  suggestedDepartmentSlugs: string[];
+  suggestedClassificationSlugs: string[];
+  // Coordenadas sugeridas por el LLM. null = el agente no sugirió nada.
+  // Mantenemos el tipo numérico acá (no string) porque vienen del SSE así y
+  // el toggle UI sólo necesita formatearlas — la conversión a string para
+  // el form padre se hace en handleApply.
+  suggestedLat: number | null;
+  suggestedLng: number | null;
 };
 
-export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
+export function AugmentModal({
+  open,
+  onClose,
+  currentValues,
+  currentDepartmentIds,
+  currentClassificationIds,
+  availableDepartments,
+  availableClassifications,
+  onApply,
+}: Props) {
   const [phase, setPhase] = useState<string | null>(null);
   const [phaseLog, setPhaseLog] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -75,11 +114,45 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
   const [proposal, setProposal] = useState<EditableProposal | null>(null);
   const [ragNotes, setRagNotes] = useState<string>("");
   const [sources, setSources] = useState<Source[]>([]);
+  // Selección de chips sugeridos (slugs activos para aceptar al "Aplicar").
+  const [acceptedDeptSlugs, setAcceptedDeptSlugs] = useState<Set<string>>(
+    new Set(),
+  );
+  const [acceptedClassSlugs, setAcceptedClassSlugs] = useState<Set<string>>(
+    new Set(),
+  );
+  // Toggle de aceptación para las coordenadas sugeridas. Se pre-acepta por
+  // default si el agente las trae y el form padre las tiene vacías.
+  const [acceptCoords, setAcceptCoords] = useState(false);
 
   // Necesitamos un ref al currentValues para usarlo en el fetch sin capturar
   // valores viejos en efectos estables.
   const currentRef = useRef(currentValues);
   currentRef.current = currentValues;
+
+  // Lookup: slug → Term, sobre el catálogo. Si el LLM devuelve un slug que no
+  // está en el catálogo lo descartamos silenciosamente al renderizar.
+  const deptBySlug = useMemo(() => {
+    const m = new Map<string, Term>();
+    availableDepartments.forEach((d) => m.set(d.slug, d));
+    return m;
+  }, [availableDepartments]);
+
+  const classBySlug = useMemo(() => {
+    const m = new Map<string, Term>();
+    availableClassifications.forEach((c) => m.set(c.slug, c));
+    return m;
+  }, [availableClassifications]);
+
+  // IDs ya seleccionados en el form padre (set para lookup rápido).
+  const currentDeptIdSet = useMemo(
+    () => new Set(currentDepartmentIds),
+    [currentDepartmentIds],
+  );
+  const currentClassIdSet = useMemo(
+    () => new Set(currentClassificationIds),
+    [currentClassificationIds],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -91,6 +164,9 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
     setProposal(null);
     setRagNotes("");
     setSources([]);
+    setAcceptedDeptSlugs(new Set());
+    setAcceptedClassSlugs(new Set());
+    setAcceptCoords(false);
 
     const abort = new AbortController();
     runAugment(currentRef.current, abort.signal)
@@ -99,6 +175,35 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
         setProposal(result.proposal);
         setRagNotes(result.ragNotes);
         setSources(result.sources);
+        // Pre-seleccionar todas las sugerencias que existan en el catálogo y
+        // no estén ya en el form. La idea: el admin acepta por default y
+        // descarta lo que no le sirva (UX más rápida).
+        setAcceptedDeptSlugs(
+          new Set(
+            result.proposal.suggestedDepartmentSlugs.filter((slug) => {
+              const t = deptBySlug.get(slug);
+              return t && !currentDeptIdSet.has(t.id);
+            }),
+          ),
+        );
+        setAcceptedClassSlugs(
+          new Set(
+            result.proposal.suggestedClassificationSlugs.filter((slug) => {
+              const t = classBySlug.get(slug);
+              return t && !currentClassIdSet.has(t.id);
+            }),
+          ),
+        );
+        // Pre-aceptamos coordenadas sólo si el agente las trae Y el form
+        // padre las tiene vacías. Si el admin ya cargó lat/lng, no tocamos
+        // su trabajo por default — sigue pudiendo opt-in con el chip.
+        const hasCoords =
+          result.proposal.suggestedLat != null &&
+          result.proposal.suggestedLng != null;
+        const formHasCoords =
+          currentRef.current.lat?.trim() !== "" &&
+          currentRef.current.lng?.trim() !== "";
+        setAcceptCoords(hasCoords && !formHasCoords);
         setLoading(false);
       })
       .catch((err) => {
@@ -211,10 +316,40 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
           finalAugmented.elevationGainM != null
             ? String(finalAugmented.elevationGainM)
             : "",
+        suggestedDepartmentSlugs:
+          finalAugmented.suggestedDepartmentSlugs ?? [],
+        suggestedClassificationSlugs:
+          finalAugmented.suggestedClassificationSlugs ?? [],
+        suggestedLat:
+          typeof finalAugmented.suggestedLat === "number"
+            ? finalAugmented.suggestedLat
+            : null,
+        suggestedLng:
+          typeof finalAugmented.suggestedLng === "number"
+            ? finalAugmented.suggestedLng
+            : null,
       },
       ragNotes: finalAugmented.ragNotes ?? "",
       sources: finalSources,
     };
+  }
+
+  function toggleDept(slug: string) {
+    setAcceptedDeptSlugs((curr) => {
+      const next = new Set(curr);
+      if (next.has(slug)) next.delete(slug);
+      else next.add(slug);
+      return next;
+    });
+  }
+
+  function toggleClass(slug: string) {
+    setAcceptedClassSlugs((curr) => {
+      const next = new Set(curr);
+      if (next.has(slug)) next.delete(slug);
+      else next.add(slug);
+      return next;
+    });
   }
 
   function handleApply() {
@@ -229,6 +364,32 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
     if (proposal.altitudeM.trim()) patch.altitudeM = proposal.altitudeM;
     if (proposal.elevationGainM.trim())
       patch.elevationGainM = proposal.elevationGainM;
+
+    // Resolver slugs aceptados a IDs (descartar los que no estén en catálogo).
+    const deptIds: string[] = [];
+    acceptedDeptSlugs.forEach((slug) => {
+      const t = deptBySlug.get(slug);
+      if (t) deptIds.push(t.id);
+    });
+    const classIds: string[] = [];
+    acceptedClassSlugs.forEach((slug) => {
+      const t = classBySlug.get(slug);
+      if (t) classIds.push(t.id);
+    });
+    if (deptIds.length > 0) patch.departmentIds = deptIds;
+    if (classIds.length > 0) patch.classificationIds = classIds;
+
+    // Coordenadas: solo se incluyen si el toggle está aceptado y ambos ejes
+    // son válidos. El padre decide la política de merge (no pisa si ya hay).
+    if (
+      acceptCoords &&
+      proposal.suggestedLat != null &&
+      proposal.suggestedLng != null
+    ) {
+      patch.lat = String(proposal.suggestedLat);
+      patch.lng = String(proposal.suggestedLng);
+    }
+
     onApply(patch);
   }
 
@@ -242,12 +403,38 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
     setProposal(null);
     setRagNotes("");
     setSources([]);
+    setAcceptedDeptSlugs(new Set());
+    setAcceptedClassSlugs(new Set());
+    setAcceptCoords(false);
     const abort = new AbortController();
     runAugment(currentRef.current, abort.signal)
       .then((result) => {
         setProposal(result.proposal);
         setRagNotes(result.ragNotes);
         setSources(result.sources);
+        setAcceptedDeptSlugs(
+          new Set(
+            result.proposal.suggestedDepartmentSlugs.filter((slug) => {
+              const t = deptBySlug.get(slug);
+              return t && !currentDeptIdSet.has(t.id);
+            }),
+          ),
+        );
+        setAcceptedClassSlugs(
+          new Set(
+            result.proposal.suggestedClassificationSlugs.filter((slug) => {
+              const t = classBySlug.get(slug);
+              return t && !currentClassIdSet.has(t.id);
+            }),
+          ),
+        );
+        const hasCoords =
+          result.proposal.suggestedLat != null &&
+          result.proposal.suggestedLng != null;
+        const formHasCoords =
+          currentRef.current.lat?.trim() !== "" &&
+          currentRef.current.lng?.trim() !== "";
+        setAcceptCoords(hasCoords && !formHasCoords);
         setLoading(false);
       })
       .catch((err) => {
@@ -262,6 +449,14 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
   // El estado `phase` se setea para tracking interno; lo referenciamos para
   // que el linter no marque como unused (la UI usa `phaseLog`).
   void phase;
+
+  // Suggestions resueltas: solo las que estén efectivamente en el catálogo.
+  const deptSuggestions = (proposal?.suggestedDepartmentSlugs ?? [])
+    .map((slug) => ({ slug, term: deptBySlug.get(slug) }))
+    .filter((s): s is { slug: string; term: Term } => Boolean(s.term));
+  const classSuggestions = (proposal?.suggestedClassificationSlugs ?? [])
+    .map((slug) => ({ slug, term: classBySlug.get(slug) }))
+    .filter((s): s is { slug: string; term: Term } => Boolean(s.term));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -326,7 +521,7 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
           {!loading && !hasError && proposal && (
             <>
               {sources.length > 0 && (
-                <div className="bg-surface-secondary border border-soft rounded-lg p-4">
+                <div className="bg-surface-primary border border-soft rounded-lg p-4">
                   <p className="text-h4 text-text-primary mb-2">
                     Fuentes consultadas
                   </p>
@@ -357,6 +552,44 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
                   </div>
                   <p className="text-body text-text-primary">{ragNotes}</p>
                 </div>
+              )}
+
+              {(deptSuggestions.length > 0 || classSuggestions.length > 0) && (
+                <div className="bg-surface-primary border border-soft rounded-lg p-4 space-y-4">
+                  {classSuggestions.length > 0 && (
+                    <SuggestionGroup
+                      title="Clasificaciones sugeridas"
+                      hint="Tocá para aceptar o descartar antes de aplicar."
+                      items={classSuggestions}
+                      accepted={acceptedClassSlugs}
+                      currentIds={currentClassIdSet}
+                      onToggle={toggleClass}
+                    />
+                  )}
+                  {deptSuggestions.length > 0 && (
+                    <SuggestionGroup
+                      title="Departamentos sugeridos"
+                      hint="Tocá para aceptar o descartar antes de aplicar."
+                      items={deptSuggestions}
+                      accepted={acceptedDeptSlugs}
+                      currentIds={currentDeptIdSet}
+                      onToggle={toggleDept}
+                    />
+                  )}
+                </div>
+              )}
+
+              {proposal.suggestedLat != null && proposal.suggestedLng != null && (
+                <CoordsSuggestion
+                  lat={proposal.suggestedLat}
+                  lng={proposal.suggestedLng}
+                  formHasCoords={
+                    currentValues.lat.trim() !== "" &&
+                    currentValues.lng.trim() !== ""
+                  }
+                  accepted={acceptCoords}
+                  onToggle={() => setAcceptCoords((v) => !v)}
+                />
               )}
 
               <ProposalField
@@ -425,12 +658,123 @@ export function AugmentModal({ open, onClose, currentValues, onApply }: Props) {
             type="button"
             onClick={handleApply}
             disabled={loading || !proposal}
-            className="btn-primary"
+            className="btn-primary-cta"
           >
             Usar propuesta
           </button>
         </footer>
       </div>
+    </div>
+  );
+}
+
+function CoordsSuggestion({
+  lat,
+  lng,
+  formHasCoords,
+  accepted,
+  onToggle,
+}: {
+  lat: number;
+  lng: number;
+  formHasCoords: boolean;
+  accepted: boolean;
+  onToggle: () => void;
+}) {
+  const formatted = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+  return (
+    <div className="bg-surface-primary border border-soft rounded-lg p-4">
+      <div className="flex items-center gap-2 mb-1">
+        <AIBadge label="IA" />
+        <p className="text-h4 text-text-primary">Coordenadas sugeridas</p>
+      </div>
+      <p className="text-btn text-text-tertiary mb-3">
+        {formHasCoords
+          ? "Ya cargaste lat/lng en el formulario; aceptar las pisará."
+          : "Tocá para aceptar o descartar antes de aplicar."}
+      </p>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-pressed={accepted}
+        className={
+          accepted
+            ? "inline-flex items-center gap-1.5 h-7 px-3 rounded-full bg-brand-primary/10 text-brand-primary border border-brand-primary/30 text-code-sm font-medium transition-colors hover:bg-brand-primary/15"
+            : "inline-flex items-center gap-1.5 h-7 px-3 rounded-full bg-transparent text-text-secondary border border-medium border-dashed text-code-sm transition-colors hover:text-text-primary hover:border-brand-primary/40"
+        }
+        title={
+          accepted
+            ? "Aceptado — se aplicará al guardar"
+            : "Tocá para aceptar"
+        }
+      >
+        <span aria-hidden="true">{accepted ? "✓" : "+"}</span>
+        <span className="font-mono">{formatted}</span>
+        {formHasCoords && accepted && (
+          <span className="text-text-tertiary">·pisa</span>
+        )}
+      </button>
+    </div>
+  );
+}
+
+function SuggestionGroup({
+  title,
+  hint,
+  items,
+  accepted,
+  currentIds,
+  onToggle,
+}: {
+  title: string;
+  hint?: string;
+  items: { slug: string; term: Term }[];
+  accepted: Set<string>;
+  currentIds: Set<string>;
+  onToggle: (slug: string) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-1">
+        <AIBadge label="IA" />
+        <p className="text-h4 text-text-primary">{title}</p>
+      </div>
+      {hint && (
+        <p className="text-btn text-text-tertiary mb-3">{hint}</p>
+      )}
+      <ul className="flex flex-wrap gap-2">
+        {items.map(({ slug, term }) => {
+          const isAccepted = accepted.has(slug);
+          const alreadyInForm = currentIds.has(term.id);
+          return (
+            <li key={slug}>
+              <button
+                type="button"
+                onClick={() => onToggle(slug)}
+                className={
+                  isAccepted
+                    ? "inline-flex items-center gap-1.5 h-7 px-3 rounded-full bg-brand-primary/10 text-brand-primary border border-brand-primary/30 text-code-sm font-medium transition-colors hover:bg-brand-primary/15"
+                    : "inline-flex items-center gap-1.5 h-7 px-3 rounded-full bg-transparent text-text-secondary border border-medium border-dashed text-code-sm transition-colors hover:text-text-primary hover:border-brand-primary/40"
+                }
+                aria-pressed={isAccepted}
+                title={
+                  alreadyInForm
+                    ? "Ya está seleccionado en el formulario"
+                    : isAccepted
+                      ? "Aceptado — se sumará al aplicar"
+                      : "Tocá para aceptar"
+                }
+              >
+                <span aria-hidden="true">{isAccepted ? "✓" : "+"}</span>
+                <span>{term.name}</span>
+                {alreadyInForm && (
+                  <span className="text-text-tertiary">·ya</span>
+                )}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -476,7 +820,7 @@ function ProposalField({
           <summary className="cursor-pointer hover:text-text-primary transition-colors">
             Ver original
           </summary>
-          <pre className="mt-2 p-3 bg-surface-secondary border border-soft rounded-md whitespace-pre-wrap font-sans text-btn text-text-primary">
+          <pre className="mt-2 p-3 bg-surface-primary border border-soft rounded-md whitespace-pre-wrap font-sans text-btn text-text-primary">
             {original}
           </pre>
         </details>
@@ -484,4 +828,3 @@ function ProposalField({
     </div>
   );
 }
-

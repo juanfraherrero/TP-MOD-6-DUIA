@@ -118,17 +118,29 @@ Emitido al final de cada turno del chat. Es **el evento más rico** — concentr
   "hadWebEnrichment": false,      // ¿usó Tavily proactivo (isOnlyPlace)?
   "blockedByInputGuard": false,
   "blockedByOutputGuard": false,
+  "evaluationScores": [0.85, 0.62, 0.41],   // scores 0..1 del evaluator (1 por candidato). [] si el evaluator se saltó (ej. 0 candidatos por el filtro MAX_VECTOR_DISTANCE en retrieve).
+  "topDistance": 0.4123,                     // pgvector cosine distance del mejor hit pre-evaluator (0=idéntico, 2=opuesto). null si retrieve no devolvió nada.
+  "candidatesCount": 3,                      // cuántos hits llegaron del retrieve (post MAX_VECTOR_DISTANCE filter).
   "intent": {
     "placeNames": ["Bariloche"],
     "filters": {
       "maxPriceArs": 60000,
       "targetDate": null,            // ISO "YYYY-MM-DD" cuando el usuario menciona un día puntual
       "dateRangeStart": null,        // ISO — extremo inferior de un rango mencionado
-      "dateRangeEnd": null           // ISO — extremo superior
+      "dateRangeEnd": null,          // ISO — extremo superior
+      "minAltitudeM": null,          // int (m) — solo si el usuario menciona NÚMERO explícito ("sobre 4000m")
+      "maxAltitudeM": null,          // int (m)
+      "minElevationGainM": null,     // int (m) — desnivel mínimo explícito
+      "maxElevationGainM": null      // int (m) — desnivel máximo explícito ("hasta 500m de desnivel")
     }
   }
 }
 ```
+
+**Notas sobre los campos de retrieval/evaluation**:
+- `evaluationScores`: array vacío `[]` cuando `evaluate_match` se saltó porque `candidates` estaba vacío (el `MAX_VECTOR_DISTANCE = 0.85` filter del retrieve eliminó todos los hits, o ningún chunk pasó los filtros estructurales). Útil para detectar preguntas off-domain que el `input_guard` dejó pasar pero el catálogo no cubre.
+- `topDistance`: la distancia coseno del hit MÁS CERCANO devuelto por retrieve. Sirve como termómetro objetivo de "qué tan bien matchea el catálogo a este tipo de query" (independiente del LLM evaluator). Valores típicos: `<0.4` muy bueno, `0.4–0.6` aceptable, `0.6–0.85` marginal, `>0.85` filtrado out por `MAX_VECTOR_DISTANCE`.
+- `candidatesCount`: tamaño del array `candidates` post-retrieve. Si es 0, `evaluate_match` se saltea, `rank_and_explain` cae en `matchQuality="none"` y se emite el fallback no-match.
 
 ### 3.6 `proposal_shown` (backend)
 Se emite **un evento por cada actividad** del ranking final (hasta 3 por turno).

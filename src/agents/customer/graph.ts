@@ -4,7 +4,6 @@ import { CustomerAnnotation } from "./state";
 import {
 	inputGuard,
 	extractIntent,
-	webEnrich,
 	queryRewrite,
 	ragRetrieve,
 	evaluateMatch,
@@ -13,7 +12,6 @@ import {
 	guardrailCheck,
 	emitResponse,
 	routeInputGuard,
-	routeEnrichment,
 	routeEvaluation,
 } from "./nodes";
 
@@ -24,7 +22,6 @@ function build() {
 	const graph = new StateGraph(CustomerAnnotation)
 		.addNode("input_guard", inputGuard)
 		.addNode("extract_intent", extractIntent)
-		.addNode("web_enrich", webEnrich)
 		.addNode("query_rewrite", queryRewrite)
 		.addNode("rag_retrieve", ragRetrieve)
 		.addNode("evaluate_match", evaluateMatch)
@@ -37,15 +34,13 @@ function build() {
 			extract_intent: "extract_intent",
 			emit_response: "emit_response",
 		})
-		.addConditionalEdges("extract_intent", routeEnrichment, {
-			// isOnlyPlace=true → web_enrich antes de query_rewrite (el rewrite
-			// va a usar el contexto de Tavily). Caso normal → directo a
-			// query_rewrite. query_rewrite traduce el semanticQuery a
-			// vocabulario técnico alineado con audience_tags + descripciones.
-			web_enrich: "web_enrich",
-			rag_retrieve: "query_rewrite",
-		})
-		.addEdge("web_enrich", "query_rewrite")
+		// extract_intent → query_rewrite directo. La vieja rama isOnlyPlace
+		// → web_enrich antes del rewrite se eliminó: el catálogo + el filtro
+		// geo (resolveMentionedPlaces + Haversine 100km en rag_retrieve)
+		// alcanzan para responder sin pagar la latencia + cuota Tavily.
+		// web_enrich/Tavily sólo se invoca como rescate cuando evaluate_match
+		// da bajo score (loop CRAG vía web_enrich_retry).
+		.addEdge("extract_intent", "query_rewrite")
 		.addEdge("query_rewrite", "rag_retrieve")
 		.addEdge("rag_retrieve", "evaluate_match")
 		.addConditionalEdges("evaluate_match", routeEvaluation, {

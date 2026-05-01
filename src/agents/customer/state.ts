@@ -6,6 +6,15 @@ export type ChatMessage = {
   content: string;
 };
 
+// Contexto web pasado entre nodos cuando el loop CRAG dispara web_enrich_retry.
+// Mismo shape que el augment usa (AugmentWebContext): el resumen sintetizado
+// + los snippets crudos por fuente, porque los snippets suelen aportar señal
+// concreta (lugares, datos duros, nombres propios) que el resumen pierde.
+export type WebContext = {
+  answer: string;
+  snippets: Array<{ url: string; title: string; snippet: string }>;
+};
+
 export type Intent = {
   semanticQuery: string;
   filters: {
@@ -15,9 +24,21 @@ export type Intent = {
     // Rango cuando menciona una semana / un intervalo.
     dateRangeStart?: string;
     dateRangeEnd?: string;
+    // Constraints numéricos de altitud/desnivel. Solo cuando el usuario
+    // menciona números explícitos ("sobre 4000m", "menos de 800m de desnivel").
+    // Frases cualitativas ("alta montaña", "exigente") NO van acá — el
+    // matching cualitativo lo resuelve el embedding contra audienceTags.
+    minAltitudeM?: number;
+    maxAltitudeM?: number;
+    minElevationGainM?: number;
+    maxElevationGainM?: number;
   };
   placeNames: string[];
   isOnlyPlace: boolean;
+  // Señales de catálogo (Fase 5). NO son filtros: query_rewrite las suma al
+  // enrichedQuery para que el embedding pondere lo que el usuario pidió.
+  mentionedPlaces: string[];
+  mentionedCategories: string[];
 };
 
 export type EvaluationItem = {
@@ -48,7 +69,7 @@ export const CustomerAnnotation = Annotation.Root({
     reducer: (_, update) => update,
     default: () => undefined,
   }),
-  webContext: Annotation<string | undefined>({
+  webContext: Annotation<WebContext | undefined>({
     reducer: (_, update) => update,
     default: () => undefined,
   }),

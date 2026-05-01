@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { invokeStructured } from "@/agents/shared/llm";
 import { createLogger } from "@/lib/logger";
+import { dedupeTagsCaseInsensitive } from "./difficulty-tags";
 
 const log = createLogger("svc:audience-tags");
 
@@ -89,16 +90,9 @@ Generá los audienceTags.`;
       { name: "generate_audience_tags", temperature: 0.4 },
     );
     end();
-    // Dedupe (lower-cased) por si el LLM repite con distinta capitalización.
-    const seen = new Set<string>();
-    const dedup: string[] = [];
-    for (const tag of result.audienceTags) {
-      const key = tag.toLowerCase().trim();
-      if (key && !seen.has(key)) {
-        seen.add(key);
-        dedup.push(tag.trim());
-      }
-    }
+    // Dedupe shared (case-insensitive). Reusado por createActivity al mergear
+    // con los derivedTags heurísticos para no duplicar entries entre fuentes.
+    const dedup = dedupeTagsCaseInsensitive(result.audienceTags);
     log.info("tags generados", {
       title: activity.title.slice(0, 60),
       count: dedup.length,

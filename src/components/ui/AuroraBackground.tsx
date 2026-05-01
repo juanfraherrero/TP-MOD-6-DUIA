@@ -1,5 +1,7 @@
-// Fondo "aurora" con 3 radial gradients borrosos en brand-primary / brand-accent.
-// Pensado para empty states del cliente — el "wow moment" del primer load.
+// Fondo "aurora" con 3 radial gradients borrosos en brand-primary / brand-accent
+// (verde institucional). Pensado para empty states sin foto — admin views,
+// estados sin contenido. Si la pantalla ya tiene foto de fondo, NO apilar
+// Aurora encima.
 //
 // Es un layer absoluto + pointer-events-none + z-index detrás del contenido.
 // No afecta layout. Funciona en ambos temas porque las opacidades son bajas
