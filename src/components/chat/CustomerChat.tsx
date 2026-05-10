@@ -307,8 +307,8 @@ export function CustomerChat() {
                 <MessageBubble key={i} message={m} />
               ))}
 
-              {loading && (
-                <div className="space-y-3 pl-1 animate-fade-in">
+              {loading && phaseLog.length > 0 && (
+                <div className="inline-flex flex-col gap-2 rounded-2xl border border-glass bg-glass backdrop-blur-xl px-4 py-3 shadow-glass animate-fade-in">
                   {phaseLog.map((p, i) => {
                     const isLast = i === phaseLog.length - 1;
                     return (
