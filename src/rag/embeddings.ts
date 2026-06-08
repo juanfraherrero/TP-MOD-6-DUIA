@@ -1,55 +1,67 @@
-import { pipeline, type FeatureExtractionPipeline } from "@huggingface/transformers";
+import {
+  type EmbedContentRequest,
+  GoogleGenerativeAI,
+  TaskType,
+} from "@google/generative-ai";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("rag:embed");
 
-export const EMBEDDING_DIM = 384;
+// gemini-embedding-001 es el modelo de embeddings estable. Su dim nativo es
+// 3072, pero soporta `outputDimensionality` para truncar a 768 / 1536
+// (Matryoshka Representation Learning — las primeras N dims son una
+// representación autocontenida). Elegimos 768 para mantener storage chico y
+// la migration ya existente (vector(768)).
+//
+// Si cambiás el modelo o la dim, actualizar también la migration de vector(N).
+export const EMBEDDING_DIM = 768;
 
-const MODEL_ID = "Xenova/multilingual-e5-small";
+const MODEL_ID = process.env.GEMINI_EMBEDDING_MODEL ?? "gemini-embedding-001";
 
-const globalForEmbedder = globalThis as unknown as {
-  __embedderPromise?: Promise<FeatureExtractionPipeline>;
+const globalForClient = globalThis as unknown as {
+  __geminiEmbedClient?: GoogleGenerativeAI;
 };
 
-function getPipeline(): Promise<FeatureExtractionPipeline> {
-  if (!globalForEmbedder.__embedderPromise) {
-    log.info(`cargando modelo ${MODEL_ID} (primera vez descarga desde HF)`);
-    const end = log.time("modelo cargado");
-    globalForEmbedder.__embedderPromise = (async () => {
-      // `pipeline()` tiene un return type de union enorme dependiendo del task —
-      // TS lo marca "too complex". Cast vía unknown al tipo específico del task.
-      const raw = await (pipeline as unknown as (
-        task: string,
-        model: string,
-      ) => Promise<FeatureExtractionPipeline>)("feature-extraction", MODEL_ID);
-      end();
-      return raw;
-    })();
+function getClient(): GoogleGenerativeAI {
+  if (!globalForClient.__geminiEmbedClient) {
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      throw new Error("GOOGLE_API_KEY no está definido");
+    }
+    log.info(`init Gemini embed client model=${MODEL_ID} dim=${EMBEDDING_DIM}`);
+    globalForClient.__geminiEmbedClient = new GoogleGenerativeAI(apiKey);
   }
-  return globalForEmbedder.__embedderPromise;
+  return globalForClient.__geminiEmbedClient;
 }
 
-async function embed(
-  text: string,
-  prefix: "query" | "passage",
-): Promise<number[]> {
-  const pipe = await getPipeline();
-  const end = log.time(`embed ${prefix} len=${text.length}`);
-  const output = await pipe(`${prefix}: ${text}`, {
-    pooling: "mean",
-    normalize: true,
-  });
-  const vec = Array.from(output.data as Float32Array);
+async function embed(text: string, taskType: TaskType): Promise<number[]> {
+  const model = getClient().getGenerativeModel({ model: MODEL_ID });
+  const end = log.time(`embed ${taskType} len=${text.length}`);
+
+  // `outputDimensionality` no está en los types del SDK 0.24.1 pero el SDK
+  // hace JSON.stringify de los params y la API lo respeta. Cast a un tipo
+  // extendido para mantener el chequeo del resto de campos.
+  const req: EmbedContentRequest & { outputDimensionality?: number } = {
+    content: { role: "user", parts: [{ text }] },
+    taskType,
+    outputDimensionality: EMBEDDING_DIM,
+  };
+
+  const result = await model.embedContent(req);
   end();
-  return vec;
+  return result.embedding.values;
 }
 
-export const embedDocument = (text: string) => embed(text, "passage");
-export const embedQuery = (text: string) => embed(text, "query");
+export async function embedQuery(text: string): Promise<number[]> {
+  return embed(text, TaskType.RETRIEVAL_QUERY);
+}
 
-// Retry con backoff exponencial para embedDocument. Útil sobre todo en cold
-// start del modelo HF (la primera invocación tras descarga puede tardar lo
-// suficiente como para gatillar timeouts intermitentes en el runtime de Next).
+export async function embedDocument(text: string): Promise<number[]> {
+  return embed(text, TaskType.RETRIEVAL_DOCUMENT);
+}
+
+// Retry con backoff exponencial para embedDocument. Útil para tragones
+// transitorios del rate-limit de Gemini durante ingestas grandes.
 // El último error se propaga al caller para que la transacción de ingesta
 // pueda hacer rollback y la API devuelva 500 (no tragar el fallo).
 export async function embedDocumentWithRetry(
@@ -69,7 +81,7 @@ export async function embedDocumentWithRetry(
       });
       if (i < attempts - 1) {
         // 200ms, 400ms — total <1s antes de propagar.
-        await new Promise((r) => setTimeout(r, 200 * Math.pow(2, i)));
+        await new Promise((r) => setTimeout(r, 200 * 2 ** i));
       }
     }
   }

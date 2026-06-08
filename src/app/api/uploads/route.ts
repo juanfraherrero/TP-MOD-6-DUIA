@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
-import { writeFile, mkdir } from "node:fs/promises";
-import { join, extname } from "node:path";
 import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { extname, join } from "node:path";
+import { type NextRequest, NextResponse } from "next/server";
 
 const UPLOAD_DIR = join(process.cwd(), "public", "uploads");
 const ALLOWED_TYPES = new Set([
@@ -12,7 +12,22 @@ const ALLOWED_TYPES = new Set([
 ]);
 const MAX_SIZE = 5 * 1024 * 1024;
 
+// En Vercel el filesystem de la función serverless es read-only, así que
+// escribir a public/uploads/ falla con EROFS y deja un 500 críptico. Detectamos
+// el entorno y devolvemos un 501 explícito; en local sigue funcionando igual.
+const isReadOnlyFs = !!process.env.VERCEL;
+
 export async function POST(req: NextRequest) {
+  if (isReadOnlyFs) {
+    return NextResponse.json(
+      {
+        error:
+          "Las subidas de imagen están deshabilitadas en este deploy (filesystem read-only). Usá imageUrl con un link externo.",
+      },
+      { status: 501 },
+    );
+  }
+
   const formData = await req.formData();
   const file = formData.get("file");
 

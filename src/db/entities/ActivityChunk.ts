@@ -11,7 +11,7 @@ import { Activity } from "./Activity";
 
 // The `embedding` column is declared as `text` at the TypeORM level because
 // TypeORM doesn't know pgvector's `vector` type. The initial migration alters
-// the column to `vector(384)` and creates an HNSW index for cosine similarity.
+// the column to `vector(768)` and creates an HNSW index for cosine similarity.
 // Values are converted between number[] and pgvector's string format via the
 // transformer below.
 @Entity("activity_chunks")
