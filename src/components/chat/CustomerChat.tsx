@@ -60,10 +60,13 @@ const PHASE_LABELS: Record<string, string> = {
   emit_response: "Finalizando",
 };
 
+// TODO: imágenes en public/images/ siguen siendo de La Rioja — placeholders
+// hasta que se reemplacen por fotos reales de Chubut (Los Alerces, Punta Tombo,
+// Península Valdés). El texto, prompts y data ya son de Chubut.
 const SUGGESTIONS: { label: string; query: string }[] = [
-  { label: "Talampaya", query: "Quiero conocer el Parque Nacional Talampaya" },
-  { label: "Cuesta de Miranda", query: "Quiero ir a la Cuesta de Miranda" },
-  { label: "Ruta del Vino", query: "Mostrame la Ruta del Vino de La Rioja" },
+  { label: "Ballenas en Madryn", query: "Quiero ver ballenas en Puerto Madryn" },
+  { label: "Los Alerces", query: "Quiero conocer el Parque Nacional Los Alerces" },
+  { label: "Punta Tombo", query: "Quiero visitar la pingüinera de Punta Tombo" },
 ];
 
 function MapPinIcon({ className = "" }: { className?: string }) {
@@ -354,18 +357,18 @@ function TopNav() {
     <header className="absolute top-0 inset-x-0 z-20 flex h-18 items-center justify-between px-6">
       <div className="flex items-center gap-3">
         <Image
-          src="/images/icon-1.png"
+          src="/images/icon-1-chubut-white.svg"
           alt=""
           width={120}
           height={40}
           className="h-9 w-auto"
           priority
         />
-        <span className="text-white text-link leading-tight">
+        {/* <span className="text-white text-link leading-tight">
           Gobierno
           <br />
-          de La Rioja
-        </span>
+          de Chubut
+        </span> */}
       </div>
       <nav className="hidden items-center gap-8 sm:flex">
         <a
@@ -404,14 +407,14 @@ function HeroCard({
     <div className="glass-panel mx-auto w-full max-w-hero p-12 sm:p-14 animate-fade-in">
       <div className="flex flex-col items-center text-center">
         <span className="text-eyebrow uppercase text-white/60">
-          Gobierno de La Rioja · Turismo
+          Gobierno de Chubut · Turismo
         </span>
         <h1 className="mt-6 text-hero text-white text-shadow-hero">
-          Agente de Turismo de La Rioja
+          Agente de Turismo de Chubut
         </h1>
         <p className="mt-4 max-w-[480px] text-body-span text-white/70">
-          Bienvenido al asistente inteligente para descubrir los encantos de La
-          Rioja.
+          Bienvenido al asistente inteligente para descubrir los encantos de
+          Chubut.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           {suggestions.map((s) => (

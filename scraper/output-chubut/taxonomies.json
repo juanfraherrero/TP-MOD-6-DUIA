@@ -1,0 +1,30 @@
+{
+  "clasificaciones": {
+    "1": {
+      "id": 1,
+      "name": "invierno",
+      "slug": "temporada-invierno",
+      "count": 32
+    },
+    "2": {
+      "id": 2,
+      "name": "primavera",
+      "slug": "temporada-primavera",
+      "count": 47
+    },
+    "3": {
+      "id": 3,
+      "name": "verano",
+      "slug": "temporada-verano",
+      "count": 46
+    },
+    "4": {
+      "id": 4,
+      "name": "otono",
+      "slug": "temporada-otono",
+      "count": 38
+    }
+  },
+  "departamentos": {},
+  "region": {}
+}

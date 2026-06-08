@@ -255,7 +255,7 @@ Al crear o actualizar una actividad desde el formulario admin:
 
 Los `derivedTags` se mergean con los `llmTags` (dedupe case-insensitive) antes de persistir y se **siempre re-calculan** en update (no dependen del cambio de texto). Esto garantiza que un bump de altitud actualice los tags aunque el resto del texto siga igual. Los `audienceTags` finales viajan tanto al campo `audience_tags text[]` (queryable por SQL) como concatenados al texto que va al embedder, así una query como `"actividad muy exigente en alta montaña"` matchea por embedding aunque el LLM no haya escrito esas palabras textuales.
 
-**Trigger de re-generación LLM en update**: además de cambios en los campos de texto, se regenera el LLM call cuando cambian las taxonomías (`departmentIds` o `classificationIds`) — esas relaciones también dan señal al LLM (un trekking de Famatina hereda contexto distinto que uno de Vinchina). Si nada de eso cambió, se conservan los `llmTags` existentes; los `derivedTags` se recalculan por idempotencia.
+**Trigger de re-generación LLM en update**: además de cambios en los campos de texto, se regenera el LLM call cuando cambian las taxonomías (`departmentIds` o `classificationIds`) — esas relaciones también dan señal al LLM (un trekking en Los Alerces hereda contexto distinto que uno en Comodoro Rivadavia). Si nada de eso cambió, se conservan los `llmTags` existentes; los `derivedTags` se recalculan por idempotencia.
 
 **Paginación del listado admin**: `listActivities({ page, pageSize })` retorna `{ items, total, page, pageSize, totalPages }` y usa `findAndCount` con `skip/take` para paginar a nivel SQL — el catálogo crece pero la página `/admin/activities` mantiene latencia constante. Default `pageSize=20` (cap defensivo a 100). El handler `GET /api/activities` acepta `?page=N&size=N` y devuelve el mismo shape paginado. La UI agrega un componente `<Pagination>` (contador "Página X de Y · Z actividades" + botones anterior/siguiente como `<Link>` que mutan `?page=`); en página 1 / última el botón correspondiente queda con `aria-disabled` y opacity reducida (sin link). Si `totalPages ≤ 1` no se renderiza.
 
@@ -331,7 +331,7 @@ START
                               END
 ```
 
-> **Nota — eliminación de la rama Tavily proactiva**: en una iteración previa el grafo tenía un router `extract_intent → web_enrich (Tavily) → query_rewrite` cuando `isOnlyPlace=true`. Con el catálogo de 110 actividades de La Rioja + el filtro geo Haversine, el RAG ya alcanza para responder bien sin pagar latencia + cuota Tavily. La rama se removió: `extract_intent → query_rewrite` es directo. Tavily sólo se invoca como rescate del loop CRAG (`web_enrich_retry`) cuando `evaluate_match` da score insuficiente.
+> **Nota — eliminación de la rama Tavily proactiva**: en una iteración previa el grafo tenía un router `extract_intent → web_enrich (Tavily) → query_rewrite` cuando `isOnlyPlace=true`. Con el catálogo de ~50 experiencias de Chubut + el filtro geo Haversine, el RAG ya alcanza para responder bien sin pagar latencia + cuota Tavily. La rama se removió: `extract_intent → query_rewrite` es directo. Tavily sólo se invoca como rescate del loop CRAG (`web_enrich_retry`) cuando `evaluate_match` da score insuficiente.
 
 ### 6.2 Estado (State)
 
@@ -352,7 +352,7 @@ type CustomerState = {
     };
     placeNames: string[];           // topónimos detectados
     isOnlyPlace: boolean;           // ¿es solo un lugar sin otro contexto?
-    mentionedPlaces: string[];      // departamentos/lugares de La Rioja nombrados
+    mentionedPlaces: string[];      // departamentos/lugares de Chubut nombrados
     mentionedCategories: string[];  // categorías temáticas nombradas (bodegas, trekking…)
   };
   webContext?: {                    // contexto Tavily estructurado
@@ -378,13 +378,13 @@ type CustomerState = {
 
 *Por qué estructurado y no reescritura texto-a-texto*: la extracción estructurada es más robusta. Los filtros alimentan SQL (exactitud); el `semanticQuery` alimenta el embedding (flexibilidad). Pasar el historial habilita refinamiento conversacional ("más barato", "con menos altitud") — cumple el requisito del brief de "ajustar propuestas basándose en el feedback inmediato".
 
-*Por qué `mentionedPlaces` / `mentionedCategories` separados de `placeNames`*: estos dos arrays capturan señales del catálogo (departamentos de La Rioja, categorías temáticas como "bodegas" / "astroturismo") sin convertirlos en filtros WHERE. El nodo `query_rewrite` los suma al `enrichedQuery` para que el embedding pondere lo que el usuario pidió contra las líneas `Categorías:` y `Departamento:` que viven en el texto embeddeado de cada actividad. Matching 100% semántico, sin recall cliff por nombres mal escritos o slugs ausentes.
+*Por qué `mentionedPlaces` / `mentionedCategories` separados de `placeNames`*: estos dos arrays capturan señales del catálogo (departamentos de Chubut, categorías temáticas como "ballenas" / "trekking") sin convertirlos en filtros WHERE. El nodo `query_rewrite` los suma al `enrichedQuery` para que el embedding pondere lo que el usuario pidió contra las líneas `Categorías:` y `Departamento:` que viven en el texto embeddeado de cada actividad. Matching 100% semántico, sin recall cliff por nombres mal escritos o slugs ausentes.
 
 **`query_rewrite`** — LLM con structured output que reescribe el `semanticQuery` traduciendo demografía / salud / nivel vago al vocabulario técnico del catálogo (dificultad, desnivel, altitud, perfil del público, audience tags). Recibe además `mentionedPlaces` y `mentionedCategories` como "pistas del catálogo" para reforzar matching contra las líneas `Departamento:` y `Categorías:` que viven en el texto embeddeado.
 
 *Por qué un nodo aparte y no parte de extract_intent*: separar la limpieza de intención (qué quiere el usuario) de la traducción al vocabulario del catálogo (cómo lo encontramos) hace cada nodo trivial de testear y permite cambiar el rewrite sin tocar la extracción.
 
-**`rag_retrieve`** — Llama a `retrieveActivities(semanticQuery, 6, filters)` del Módulo A. Sin LLM. Antes de invocar resuelve `intent.mentionedPlaces` (deptos riojanos) a coordenadas oficiales vía `resolveMentionedPlaces` (`src/lib/services/places.ts`); si hay matches, agrega `nearPoints[]` + `maxDistanceKm: 100` a los filtros para activar el filtro Haversine en el SQL (ver Módulo A). Las activities sin lat/lng quedan excluidas cuando el filtro está set.
+**`rag_retrieve`** — Llama a `retrieveActivities(semanticQuery, 6, filters)` del Módulo A. Sin LLM. Antes de invocar resuelve `intent.mentionedPlaces` (deptos chubutenses) a coordenadas oficiales vía `resolveMentionedPlaces` (`src/lib/services/places.ts`); si hay matches, agrega `nearPoints[]` + `maxDistanceKm: 100` a los filtros para activar el filtro Haversine en el SQL (ver Módulo A). Las activities sin lat/lng quedan excluidas cuando el filtro está set.
 
 **`web_enrich_retry`** (rescate del loop CRAG, NO proactivo) — Sólo se invoca cuando `evaluate_match` da score insuficiente. Llama a Tavily con `searchDepth: "advanced"` (mismo nivel que el augment del Módulo E) e inyecta el `answer` al `semanticQuery` para mejorar el retrieval, **y guarda el shape estructurado `{answer, snippets[]}` en `webContext`** para que `query_rewrite` razone sobre los fragmentos crudos en la próxima pasada — los snippets suelen aportar nombres propios y datos físicos que el resumen pierde. Mismo patrón de "INFO WEB" que `synthesize` del augment, unificando el contrato entre los dos grafos. El proceso vuelve por `query_rewrite`.
 

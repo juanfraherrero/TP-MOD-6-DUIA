@@ -6,7 +6,7 @@
 
 El sistema "Cinematic Glass" se construye alrededor de dos ideas:
 
-1. **El paisaje es el héroe.** En las pantallas atmosféricas (landing, hero, empty states), una fotografía full-bleed (paisajes de La Rioja, ej: Talampaya, Cuesta de Miranda) llena el viewport. La UI es atmósfera sobre el paisaje — no compite con él, lo amplifica.
+1. **El paisaje es el héroe.** En las pantallas atmosféricas (landing, hero, empty states), una fotografía full-bleed (paisajes de Chubut, ej: Los Alerces, Península Valdés, Bosque Petrificado) llena el viewport. La UI es atmósfera sobre el paisaje — no compite con él, lo amplifica.
 2. **Una sola receta de vidrio.** Cada panel flotante en el mismo contexto usa exactamente la misma combinación de blur, opacity, border y shadow. La consistencia del material es lo que separa "interfaz premium" de "stickers pegados encima de una foto".
 
 Para pantallas densas en contenido (admin, formularios, conversación de chat extendida) el sistema mantiene **superficies sólidas theme-aware** con la misma disciplina de antes — Inter Variable, grid de 4px, escala de radius. La transición entre ambos modos es deliberada: el chat empieza en glass sobre la foto, y al primer mensaje del usuario el viewport se desliza a un layout sólido legible.
@@ -179,7 +179,7 @@ Background fotográfico full-bleed con overlay degradado. Es el contexto donde v
     <span className="text-white text-link leading-tight">
       Gobierno
       <br />
-      de La Rioja
+      de Chubut
     </span>
   </div>
   <nav className="flex items-center gap-8">
@@ -218,16 +218,16 @@ Es el panel central. **Cualquier otro panel glass en la página debe heredar est
   }}
 >
   <span className="block text-eyebrow uppercase text-white/60 mb-6 text-center">
-    Gobierno de La Rioja · Turismo
+    Gobierno de Chubut · Turismo
   </span>
   <h1
     className="text-hero font-semibold text-white text-center tracking-tight"
     style={{ textShadow: "0 2px 12px rgba(0,0,0,0.4)" }}
   >
-    Agente de Turismo de La Rioja
+    Agente de Turismo de Chubut
   </h1>
   <p className="mt-4 text-body-span text-white/70 text-center max-w-[480px] mx-auto">
-    Bienvenido al asistente inteligente para descubrir los encantos de La Rioja.
+    Bienvenido al asistente inteligente para descubrir los encantos de Chubut.
   </p>
   <div className="mt-8 flex flex-wrap gap-3 justify-center">
     {/* Suggestion chips */}
@@ -263,7 +263,7 @@ Es el panel central. **Cualquier otro panel glass en la página debe heredar est
   "
 >
   <MapPinIcon className="size-3.5" />
-  Talampaya
+  Los Alerces
 </button>
 ```
 
@@ -466,7 +466,7 @@ El admin layout (`src/app/admin/layout.tsx`) usa un patrón **"subtle glass on s
     <Link href="/admin/activities" className="flex items-center gap-3 shrink-0">
       <Image
         src="/images/icon-2.png"
-        alt="La Rioja"
+        alt="Chubut"
         width={120}
         height={32}
         className="h-7 w-auto"
@@ -489,7 +489,7 @@ El admin layout (`src/app/admin/layout.tsx`) usa un patrón **"subtle glass on s
 - Blur: `backdrop-blur-md` (12px). **NO `backdrop-blur-2xl`** (24px) — eso es solo para glass-over-photo. En admin, el blur fuerte se ve forzado.
 - Height: `h-18` (72px) — heredado del sistema anterior.
 - Border bottom: `border-b border-soft` (hairline) + brand stripe abajo (`h-[2px]` con gradient verde transparente).
-- Wordmark: `icon-2.png` (verde "LA RIOJA - Argentina") en `h-7` (28px). Si no tenés el wordmark, usá lockup textual.
+- Wordmark: `icon-2.png` (verde "CHUBUT - Argentina") en `h-7` (28px). Si no tenés el wordmark, usá lockup textual. (Nota: el archivo `icon-2.png` heredado todavía muestra "LA RIOJA" hasta que se reemplace la imagen — el código y los alt text ya dicen Chubut.)
 - Hairline divider (`h-5 w-px bg-border-medium`) entre wordmark y "Admin" — se oculta en mobile.
 
 #### Admin Nav (active state)
@@ -524,7 +524,7 @@ Al tope de cada página densa (admin), después del shell. Patrón de jerarquía
     <span aria-hidden="true">←</span> Actividades
   </Link>
   <span className="block text-eyebrow uppercase text-text-tertiary mt-4">
-    Catálogo · La Rioja
+    Catálogo · Chubut
   </span>
   <h1 className="text-display-2 text-text-primary">Actividades</h1>
   <p className="text-body-span text-text-secondary max-w-xl">

@@ -155,8 +155,8 @@ export function buildActivityText(a: ActivityInput): string {
     );
   }
   // Captions de la galería al final — suman vocabulario natural ("Vista del
-  // Famatina al amanecer") sin pisar la estructura de campos. Filtradas para
-  // descartar nombres de archivo del scraper.
+  // Cerro Catedral al amanecer") sin pisar la estructura de campos. Filtradas
+  // para descartar nombres de archivo del scraper.
   if (a.gallery && a.gallery.length > 0) {
     const captions: string[] = [];
     for (const g of a.gallery) {

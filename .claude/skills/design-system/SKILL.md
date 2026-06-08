@@ -5,7 +5,7 @@ description: Use when adding or modifying any UI in this TP DUIA project — pag
 
 # Design system — TP DUIA (Cinematic Glass)
 
-UI inspirada en paisajes de La Rioja: **fotografía full-bleed** como héroe, paneles flotantes de **vidrio esmerilado** con una sola receta consistente, acento **verde institucional** únicamente en CTA. Para vistas densas en contenido (admin, chat extendido) hay un sistema **sólido warm off-white** que comparte tipografía, grid y disciplina con el glass.
+UI inspirada en paisajes de Chubut: **fotografía full-bleed** como héroe, paneles flotantes de **vidrio esmerilado** con una sola receta consistente, acento **verde institucional** únicamente en CTA. Para vistas densas en contenido (admin, chat extendido) hay un sistema **sólido warm off-white** que comparte tipografía, grid y disciplina con el glass.
 
 > **Referencia completa**: `DESIGN.md` en esta misma carpeta. Cargala cuando necesites specs exactos (token map, drop-shadow del título, breakpoints, recetas glass detalladas, admin shell).
 > **Sistema anterior** (Linear-inspired, indigo): preservado en `DESIGN-OLD.md` para referencia histórica.
@@ -204,16 +204,16 @@ Convenciones:
   }}
 >
   <span className="block text-eyebrow uppercase text-white/60 mb-6 text-center">
-    Gobierno de La Rioja · Turismo
+    Gobierno de Chubut · Turismo
   </span>
   <h1
     className="text-hero font-semibold text-white text-center tracking-tight"
     style={{ textShadow: "0 2px 12px rgba(0,0,0,0.4)" }}
   >
-    Agente de Turismo de La Rioja
+    Agente de Turismo de Chubut
   </h1>
   <p className="mt-4 text-body-span text-white/70 text-center max-w-[480px] mx-auto">
-    Bienvenido al asistente inteligente para descubrir los encantos de La Rioja.
+    Bienvenido al asistente inteligente para descubrir los encantos de Chubut.
   </p>
   <div className="mt-8 flex flex-wrap gap-3 justify-center">{/* chips */}</div>
 </div>
@@ -231,7 +231,7 @@ Convenciones:
   hover:bg-glass-hover transition-colors
 ">
   <MapPinIcon className="size-3.5" />
-  Talampaya
+  Los Alerces
 </button>
 ```
 
@@ -302,7 +302,7 @@ Es la clase vieja: `h-8 px-3 rounded-full bg-cta-bg shadow-l2` (dark, neutral). 
   <div className="flex items-center gap-3">
     <CoatOfArmsIcon className="size-8 text-white" />
     <span className="text-white text-link leading-tight">
-      Gobierno<br />de La Rioja
+      Gobierno<br />de Chubut
     </span>
   </div>
   <nav className="flex items-center gap-8">
@@ -362,7 +362,7 @@ El admin layout usa un patrón "subtle glass on solid" — sticky header con bac
 <header className="sticky top-0 z-30 bg-surface-primary/85 backdrop-blur-md border-b border-soft">
   <div className="max-w-container mx-auto h-18 px-6 flex items-center gap-10">
     <Link href="/admin/activities" className="flex items-center gap-3">
-      <Image src="/images/icon-2.png" alt="La Rioja" width={120} height={32} className="h-7 w-auto" />
+      <Image src="/images/icon-2.png" alt="Chubut" width={120} height={32} className="h-7 w-auto" />
       <span className="hidden sm:inline-block h-5 w-px bg-border-medium" />
       <span className="hidden sm:inline text-link text-text-secondary">Admin</span>
     </Link>
@@ -377,7 +377,7 @@ El admin layout usa un patrón "subtle glass on solid" — sticky header con bac
 
 - `bg-surface-primary/85 backdrop-blur-md` — el 85% de opacidad + blur leve (12px) deja entrever lo que scrollea debajo, sin perder legibilidad. **No uses `backdrop-blur-2xl` acá** — eso es solo para glass over photo.
 - Brand stripe `h-[2px]` con gradient transparente en los extremos — más elegante que un border sólido. Es el detalle que conecta admin con el landing.
-- Wordmark de marca (`icon-2.png`, verde "LA RIOJA - Argentina") en `h-7` (28px). Si no tenés el wordmark a mano, usá el escudo o el lockup textual.
+- Wordmark de marca (`icon-2.png`, verde "CHUBUT - Argentina") en `h-7` (28px). Si no tenés el wordmark a mano, usá el escudo o el lockup textual. (Nota: el archivo `icon-2.png` heredado todavía muestra "LA RIOJA" hasta que se reemplace la imagen — el código y los alt text ya dicen Chubut.)
 - Hairline divider (`h-5 w-px bg-border-medium`) entre wordmark y "Admin" — se oculta en mobile.
 
 ### Page header (admin pages — eyebrow + display title + subtitle)
@@ -391,7 +391,7 @@ Patrón de jerarquía de la página (afuera del shell). Va al tope de cada pági
     <span aria-hidden="true">←</span> Actividades
   </Link>
   <span className="block text-eyebrow uppercase text-text-tertiary mt-4">
-    Catálogo · La Rioja
+    Catálogo · Chubut
   </span>
   <h1 className="text-display-2 text-text-primary">Actividades</h1>
   <p className="text-body-span text-text-secondary max-w-xl">

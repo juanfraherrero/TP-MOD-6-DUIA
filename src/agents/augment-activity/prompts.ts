@@ -73,7 +73,7 @@ Input:
 - Descripción original (pobre): "Una linda caminata en El Chaltén."
 - Tavily: "La Laguna de los Tres está a 1170m de altitud, trekking de unas 10h ida y vuelta, dificultad media-alta, vista directa al Fitz Roy..."
 
-Output (asumiendo CATÁLOGO con clasificaciones [trekking, aventura-y-naturaleza] y departamentos [chilecito, famatina]):
+Output (asumiendo CATÁLOGO con clasificaciones [trekking, aventura-y-naturaleza] y departamentos [futaleufu, cushamen]):
 {"description": "Trekking de dificultad media-alta en la región de El Chaltén, Santa Cruz, con destino a la Laguna de los Tres al pie del Cerro Fitz Roy. El recorrido completo demanda 10 horas ida y vuelta atravesando bosque andino, pedregales y el último tramo de ascenso con pendiente pronunciada. Paisaje típico de alta montaña patagónica: aire frío, vistas panorámicas al glaciar y a la laguna de origen glacial. Apto para personas con experiencia básica en caminatas de montaña y buen estado físico. Recomendado en primavera y verano por clima más estable.",
  "requirements": "Edad mínima 14 años. Equipo: calzado de trekking, capa de abrigo, protección solar, 2L de agua, snacks. Experiencia previa en caminatas de 6h+.",
  "physicalPrep": "Nivel físico medio-alto. Entrenar con caminatas progresivas de 4 a 8 horas en las semanas previas, sumando desnivel.",
@@ -85,7 +85,7 @@ Output (asumiendo CATÁLOGO con clasificaciones [trekking, aventura-y-naturaleza
  "suggestedClassificationSlugs": ["trekking", "aventura-y-naturaleza"],
  "suggestedDepartmentSlugs": []}
 
-(Nota: el ejemplo es de Santa Cruz, no de La Rioja, así que NO sugerí departamentos. Si el catálogo no tuviera "trekking" como slug, suggestedClassificationSlugs sería [] — nunca se inventa.)
+(Nota: el ejemplo es de Santa Cruz, no de Chubut, así que NO sugerí departamentos. Si el catálogo no tuviera "trekking" como slug, suggestedClassificationSlugs sería [] — nunca se inventa.)
 
 FORMATO: tenés una tool disponible — invocala como respuesta. No expliques, no des markdown, no uses texto plano. Solo la tool call con los parámetros correctos.
 

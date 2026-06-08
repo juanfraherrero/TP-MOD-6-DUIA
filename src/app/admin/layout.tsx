@@ -16,8 +16,8 @@ export default function AdminLayout({
             className="flex items-center gap-3 shrink-0"
           >
             <Image
-              src="/images/icon-2.png"
-              alt="La Rioja"
+              src="/images/icon-1-chubut-black.png"
+              alt="Chubut"
               width={120}
               height={32}
               className="h-7 w-auto"

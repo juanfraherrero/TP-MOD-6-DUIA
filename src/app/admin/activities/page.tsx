@@ -25,7 +25,7 @@ export default async function ActivitiesPage({ searchParams }: PageProps) {
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <span className="text-eyebrow uppercase text-text-tertiary">
-            Catálogo · La Rioja
+            Catálogo · Chubut
           </span>
           <h1 className="mt-2 text-display-2 text-text-primary">Actividades</h1>
           <p className="mt-2 text-body-span text-text-secondary max-w-xl">

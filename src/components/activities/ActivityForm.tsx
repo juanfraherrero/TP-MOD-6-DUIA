@@ -495,7 +495,7 @@ export function ActivityForm({ initial }: { initial?: ActivityFormInitial }) {
           options={departments}
           values={departmentIds}
           onChange={setDepartmentIds}
-          placeholder="Buscar departamento (ej. Chilecito)"
+          placeholder="Buscar departamento (ej. Biedma, Futaleufú)"
         />
         <MultiSelectChips
           label="Clasificaciones"

@@ -73,9 +73,9 @@ const inputGuardSchema = z.object({
   reason: z.string().default("").describe("Una línea explicando."),
 });
 
-const OUT_OF_SCOPE_MESSAGE = `Uh, eso se escapa de lo mío — sólo te puedo ayudar con actividades de turismo en La Rioja, Argentina (trekking, bodegas, cabalgatas, astroturismo, paseos, etc.).
+const OUT_OF_SCOPE_MESSAGE = `Uh, eso se escapa de lo mío — sólo te puedo ayudar con actividades de turismo en Chubut, Argentina (avistaje de ballenas y pingüinos, trekking patagónico, esquí, buceo, parques nacionales, cultura galesa, etc.).
 
-¿Probás con algo de eso? Por ejemplo decime un departamento como Chilecito, Famatina o Capital, o el tipo de experiencia que tenés ganas.`;
+¿Probás con algo de eso? Por ejemplo decime un lugar como Puerto Madryn, Esquel, Los Alerces o Península Valdés, o el tipo de experiencia que tenés ganas.`;
 
 export async function inputGuard(
   state: CustomerState,
@@ -215,7 +215,7 @@ const intentSchema = z.object({
     .array(z.string())
     .default([])
     .describe(
-      "Departamentos o lugares específicos de La Rioja nombrados (Chilecito, Famatina, Capital, etc.).",
+      "Departamentos o lugares específicos de Chubut nombrados (Puerto Madryn, Esquel, Trelew, Los Alerces, Península Valdés, etc.).",
     ),
   mentionedCategories: z
     .array(z.string())
@@ -409,8 +409,8 @@ export async function ragRetrieve(
     maxElevationGainM: intent.filters.maxElevationGainM ?? undefined,
   };
 
-  // Resolver mentionedPlaces (departamentos riojanos detectados por
-  // extract_intent) a coordenadas oficiales de la cabecera departamental.
+  // Resolver mentionedPlaces (departamentos/ciudades chubutenses detectados
+  // por extract_intent) a coordenadas oficiales de la cabecera departamental.
   // Las menciones que no matchean ningún depto se omiten silenciosamente.
   // Si hay al menos un point, aplicamos filtro Haversine 100km en el SQL.
   const points = await resolveMentionedPlaces(intent.mentionedPlaces ?? []);
